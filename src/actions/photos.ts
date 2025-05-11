@@ -1,10 +1,8 @@
-
 'use server';
 
 import { revalidatePath } from 'next/cache';
 import { z, ZodError } from 'zod';
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server';
-import { createSupabaseBrowserClient } from '@/lib/supabase/client'; // Added for getPublicPhotos
 import type { Photo } from '@/types';
 
 // Schemas for validation
@@ -18,7 +16,7 @@ const CreatePhotoSchema = PhotoBaseSchema.extend({
 });
 
 const UpdatePhotoSchema = PhotoBaseSchema.extend({
-  id: z.string().uuid(),
+  id: z.string().uuid({ message: 'Invalid photo ID format.' }),
 });
 
 
@@ -29,6 +27,13 @@ export type PhotoActionState = {
   photo?: Photo | null;
 };
 
+function checkSupabaseEnvVars(): boolean {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error("Supabase URL or Service Role Key is not configured in environment variables.");
+    return false;
+  }
+  return true;
+}
 
 async function getMaxDisplayOrder(supabase: ReturnType<typeof createSupabaseServiceRoleClient>): Promise<number> {
   const { data, error } = await supabase
@@ -47,6 +52,13 @@ async function getMaxDisplayOrder(supabase: ReturnType<typeof createSupabaseServ
 
 
 export async function uploadPhoto(prevState: PhotoActionState | undefined, formData: FormData): Promise<PhotoActionState> {
+  if (!checkSupabaseEnvVars()) {
+    return {
+      message: "Server configuration error: Supabase credentials missing. Please contact administrator.",
+      success: false,
+      errors: { general: ["Server configuration error for database access."] }
+    };
+  }
   try {
     const supabase = createSupabaseServiceRoleClient();
     
@@ -57,7 +69,7 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
     });
 
     if (!validatedFields.success) {
-      console.error("Validation Errors:", validatedFields.error.flatten().fieldErrors);
+      console.error("Validation Errors (uploadPhoto):", validatedFields.error.flatten().fieldErrors);
       return {
         errors: validatedFields.error.flatten().fieldErrors,
         message: 'Validation failed. Please check the form fields.',
@@ -81,7 +93,7 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
       .single();
 
     if (dbError) {
-      console.error('Database Insert Error:', dbError);
+      console.error('Database Insert Error (uploadPhoto):', dbError);
       return { message: `Database Error: ${dbError.message}`, success: false, errors: { general: ["Failed to save photo details to database."] } };
     }
 
@@ -100,7 +112,7 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
             success: false,
         };
     } else if (error instanceof Error) {
-        // Avoid exposing too much detail from generic Error objects if not desired
+        // errorMessage = error.message; // Avoid exposing too much detail
     }
     
     return {
@@ -112,6 +124,13 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
 }
 
 export async function updatePhotoDetails(prevState: PhotoActionState | undefined, formData: FormData): Promise<PhotoActionState> {
+  if (!checkSupabaseEnvVars()) {
+    return {
+      message: "Server configuration error: Supabase credentials missing. Please contact administrator.",
+      success: false,
+      errors: { general: ["Server configuration error for database access."] }
+    };
+  }
  try {
     const supabase = createSupabaseServiceRoleClient();
     const id = formData.get('id') as string;
@@ -123,14 +142,15 @@ export async function updatePhotoDetails(prevState: PhotoActionState | undefined
     });
 
     if (!validatedFields.success) {
+      console.error("Validation Errors (updatePhotoDetails):", validatedFields.error.flatten().fieldErrors);
       return {
         errors: validatedFields.error.flatten().fieldErrors,
-        message: 'Validation failed.',
+        message: 'Validation failed. Please check the form fields, especially the ID.',
         success: false,
       };
     }
 
-    const { alt, description } = validatedFields.data;
+    const { alt, description } = validatedFields.data; // id is also in validatedFields.data.id
 
     const { data: photo, error } = await supabase
       .from('photos')
@@ -139,12 +159,12 @@ export async function updatePhotoDetails(prevState: PhotoActionState | undefined
         description,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', id)
+      .eq('id', validatedFields.data.id) // Use validated id
       .select()
       .single();
 
     if (error) {
-      console.error('Update Photo Error:', error);
+      console.error('Update Photo Error (updatePhotoDetails):', error);
       return { message: `Database Error: ${error.message}`, success: false, errors: { general: ["Failed to update photo details."] } };
     }
 
@@ -154,7 +174,13 @@ export async function updatePhotoDetails(prevState: PhotoActionState | undefined
   } catch (error: unknown) {
     console.error("Unhandled error in updatePhotoDetails action:", error);
     let errorMessage = "An unexpected server error occurred during update. Please check server logs.";
-     if (error instanceof Error) {
+     if (error instanceof ZodError) { // Should be caught by validatedFields, but as a fallback
+        return {
+            errors: error.flatten().fieldErrors,
+            message: "A validation error occurred during processing.",
+            success: false,
+        };
+    } else if (error instanceof Error) {
         // errorMessage = error.message; 
     }
     return {
@@ -166,28 +192,28 @@ export async function updatePhotoDetails(prevState: PhotoActionState | undefined
 }
 
 export async function deletePhoto(id: string, src: string): Promise<PhotoActionState> {
+  if (!checkSupabaseEnvVars()) {
+    return {
+      message: "Server configuration error: Supabase credentials missing. Please contact administrator.",
+      success: false,
+      errors: { general: ["Server configuration error for database access."] }
+    };
+  }
   try {
     const supabase = createSupabaseServiceRoleClient();
 
-    // No longer deleting from Supabase Storage as per new requirement (URL based)
-    // const urlParts = src.split(`/storage/v1/object/public/${PHOTO_BUCKET_NAME}/`);
-    // if (urlParts.length < 2) {
-    //     return { message: 'Invalid photo source URL format.', success: false, errors: { general: ["Cannot determine file path from URL."] } };
-    // }
-    // const filePath = urlParts[1];
+    // Validate ID format before attempting delete
+    const idValidation = z.string().uuid({ message: "Invalid photo ID for deletion."}).safeParse(id);
+    if(!idValidation.success) {
+      console.error("Invalid ID for deletion:", idValidation.error.flatten().fieldErrors);
+      return { message: "Invalid photo ID format for deletion.", success: false, errors: { id: idValidation.error.flatten().fieldErrors.id }};
+    }
 
-    // const { error: storageError } = await supabase.storage
-    //   .from(PHOTO_BUCKET_NAME)
-    //   .remove([filePath]);
-
-    // if (storageError) {
-    //   console.error('Storage Delete Error (proceeding with DB deletion):', storageError);
-    // }
 
     const { error: dbError } = await supabase.from('photos').delete().eq('id', id);
 
     if (dbError) {
-      console.error('Database Delete Error:', dbError);
+      console.error('Database Delete Error (deletePhoto):', dbError);
       return { message: `Database Error: ${dbError.message}`, success: false, errors: { general: ["Failed to delete photo from database."] } };
     }
 
@@ -209,6 +235,11 @@ export async function deletePhoto(id: string, src: string): Promise<PhotoActionS
 }
 
 export async function getPhotos(): Promise<Photo[]> {
+  if (!checkSupabaseEnvVars()) {
+    // For query functions, throwing an error is more appropriate
+    // as they are not typically used with useActionState and don't return PhotoActionState.
+    throw new Error("Server configuration error: Supabase credentials missing.");
+  }
   const supabase = createSupabaseServiceRoleClient();
   const { data, error } = await supabase
     .from('photos')
@@ -217,13 +248,17 @@ export async function getPhotos(): Promise<Photo[]> {
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Error fetching photos:', error);
+    console.error('Error fetching photos (getPhotos):', error);
+    // Optionally, could throw error here too for consistency
     return [];
   }
   return data || [];
 }
 
 export async function getPublicPhotos(): Promise<Photo[]> {
+  if (!checkSupabaseEnvVars()) {
+    throw new Error("Server configuration error: Supabase credentials missing.");
+  }
   const supabase = createSupabaseServiceRoleClient(); 
   
   const { data, error } = await supabase
@@ -233,8 +268,12 @@ export async function getPublicPhotos(): Promise<Photo[]> {
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Error fetching public photos:', error);
+    console.error('Error fetching public photos (getPublicPhotos):', error);
     return [];
   }
-  return data || [];
+  // Filter out photos with invalid src before returning
+  const validPhotos = (data || []).filter(
+    (photo) => typeof photo.src === 'string' && photo.src.trim() !== '' && photo.src.startsWith('http')
+  );
+  return validPhotos;
 }

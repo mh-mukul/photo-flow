@@ -8,7 +8,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Card, CardContent } from '@/components/ui/card';
 import { TypingAnimation } from '@/components/effects/typing-animation';
 import type { Photo } from '@/types';
-import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { getPublicPhotos } from '@/actions/photos'; // Import the server action
 
 // Register GSAP plugin if it hasn't been already (safe to call multiple times)
 if (typeof window !== "undefined") {
@@ -21,26 +21,23 @@ export function ImageGallery() {
   const [hoveredImageId, setHoveredImageId] = useState<string | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchPhotos() {
       setIsLoading(true);
-      const supabase = createSupabaseBrowserClient();
-      const { data, error } = await supabase
-        .from('photos')
-        .select('*')
-        .order('display_order', { ascending: true })
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching photos for gallery:', error);
-        setPhotos([]);
-      } else {
-        // Filter out photos with invalid src before setting state
-        const validPhotos = (data || []).filter(
-          (photo) => typeof photo.src === 'string' && photo.src.trim() !== ''
+      setError(null);
+      try {
+        const fetchedPhotos = await getPublicPhotos();
+         // Filter out photos with invalid src before setting state, client-side validation
+        const validPhotos = (fetchedPhotos || []).filter(
+          (photo) => typeof photo.src === 'string' && photo.src.trim() !== '' && photo.src.startsWith('http')
         );
         setPhotos(validPhotos);
+      } catch (err) {
+        console.error('Error fetching photos for gallery:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load photos.');
+        setPhotos([]);
       }
       setIsLoading(false);
     }
@@ -48,7 +45,7 @@ export function ImageGallery() {
   }, []);
 
   useEffect(() => {
-    if (isLoading || photos.length === 0) return;
+    if (isLoading || photos.length === 0 || error) return;
 
     const imageElements = imageElementsRef.current.filter(el => el !== null) as HTMLDivElement[];
     
@@ -77,9 +74,8 @@ export function ImageGallery() {
 
     return () => {
       ScrollTrigger.getAll().forEach(trigger => trigger.kill());
-      // imageElementsRef.current = []; // Keep refs for potential re-renders unless photos change
     };
-  }, [photos, isLoading]); // Rerun animation setup if photos or loading state changes
+  }, [photos, isLoading, error]); 
 
   if (isLoading) {
     return (
@@ -91,6 +87,19 @@ export function ImageGallery() {
     );
   }
 
+  if (error) {
+    return (
+      <section id="gallery" className="py-16 md:py-24 bg-secondary">
+        <div className="container max-w-screen-xl mx-auto px-4 text-center">
+           <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-center mb-12 md:mb-16 text-primary tracking-tight">
+            Portfolio Showcase
+          </h2>
+          <p className="text-lg text-destructive">Error: {error}</p>
+        </div>
+      </section>
+    );
+  }
+  
   if (!photos.length) {
     return (
       <section id="gallery" className="py-16 md:py-24 bg-secondary">
@@ -118,22 +127,33 @@ export function ImageGallery() {
             <div
               key={image.id}
               ref={(el) => (imageElementsRef.current[index] = el)}
-              className="gallery-item group opacity-0 relative" // Initial opacity 0 for GSAP
+              className="gallery-item group opacity-0 relative" 
               onMouseEnter={() => setHoveredImageId(image.id)}
               onMouseLeave={() => setHoveredImageId(null)}
             >
               <Card className="overflow-hidden bg-card border-border shadow-lg hover:shadow-accent/30 transition-all duration-300 ease-in-out rounded-lg h-full flex flex-col">
                 <CardContent className="p-0 flex-grow relative">
-                  <div className={`relative w-full aspect-[4/3] overflow-hidden`}> {/* Standard aspect ratio */}
-                    <Image
-                      src={image.src}
-                      alt={image.alt || 'Portfolio image'}
-                      fill
-                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                      className="object-cover group-hover:scale-105 transition-transform duration-500 ease-in-out"
-                      priority={index < 3} // Prioritize loading for first few images
-                      data-ai-hint={image.alt ? image.alt.split(' ').slice(0,2).join(' ') : "landscape abstract"} // Use alt for hint
-                    />
+                  <div className={`relative w-full aspect-[4/3] overflow-hidden`}>
+                    {image.src && (image.src.startsWith('http://') || image.src.startsWith('https://')) ? (
+                        <Image
+                        src={image.src}
+                        alt={image.alt || 'Portfolio image'}
+                        fill
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                        className="object-cover group-hover:scale-105 transition-transform duration-500 ease-in-out"
+                        priority={index < 3} 
+                        data-ai-hint={image.alt ? image.alt.split(' ').slice(0,2).join(' ') : "landscape abstract"}
+                        onError={(e) => {
+                            // Fallback for broken image links during rendering
+                            e.currentTarget.src = "https://picsum.photos/seed/error/600/400"; 
+                            e.currentTarget.srcset = "";
+                        }}
+                        />
+                    ) : (
+                        <div className="w-full h-full bg-muted flex items-center justify-center text-muted-foreground text-xs p-2">
+                            Invalid or missing image URL
+                        </div>
+                    )}
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 ease-in-out flex flex-col justify-end h-[110px]">
                     <h3 className="text-primary font-semibold text-base mb-1 truncate">{image.alt || 'Untitled'}</h3>
@@ -157,4 +177,3 @@ export function ImageGallery() {
     </section>
   );
 }
-
