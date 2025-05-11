@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
-import { Geist } from 'next/font/google';
-import { GeistMono } from 'next/font/google';
+import { GeistSans } from 'geist/font/sans';
+import { GeistMono } from 'geist/font/mono';
 import './globals.css';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { Toaster } from "@/components/ui/toaster";
 
-const geistSans = Geist({
+const geistSans = GeistSans({
   variable: '--font-geist-sans',
   subsets: ['latin'],
   display: 'swap', // Improves font loading
