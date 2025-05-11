@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from 'next/link';
@@ -16,16 +17,13 @@ const navLinks = [
 export function Header() {
   const [isMounted, setIsMounted] = useState(false);
   const [activeLink, setActiveLink] = useState('');
-  const isMobile = useIsMobile(); // From existing hooks
+  const isMobile = useIsMobile(); 
 
   useEffect(() => {
     setIsMounted(true);
-    // Set active link based on initial hash or default to first link
     const currentHash = window.location.hash;
     if (currentHash) {
       setActiveLink(currentHash);
-    } else if (navLinks.length > 0) {
-      // setActiveLink(navLinks[0].href); // Optional: default to first if no hash
     }
   }, []);
 
@@ -36,7 +34,6 @@ export function Header() {
     const elem = document.getElementById(targetId);
     elem?.scrollIntoView({ behavior: "smooth" });
 
-    // Update URL hash without page jump for better UX and history
     if (history.pushState) {
       history.pushState(null, "", href);
     } else {
@@ -53,7 +50,7 @@ export function Header() {
           }
         });
       },
-      { rootMargin: "-50% 0px -50% 0px" } // Trigger when element is in the middle of the viewport
+      { rootMargin: "-50% 0px -50% 0px" } 
     );
 
     navLinks.forEach((link) => {
@@ -67,16 +64,14 @@ export function Header() {
 
 
   if (!isMounted) {
-    // Return a skeleton or null to avoid hydration errors during SSR
     return (
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 max-w-screen-2xl items-center justify-between">
+        <div className="container flex h-16 max-w-screen-2xl items-center justify-between px-4 md:px-6">
           <div className="flex items-center gap-2 text-primary">
             <Camera className="h-6 w-6 text-accent" />
             <span className="font-bold text-xl">PhotoFlow</span>
           </div>
-          {/* Simple placeholder for nav items */}
-          <div className="hidden md:flex h-6 w-32 bg-muted rounded"></div>
+          <div className="hidden md:flex h-6 w-32 bg-muted rounded animate-pulse"></div>
         </div>
       </header>
     );
@@ -88,16 +83,16 @@ export function Header() {
       href={link.href}
       onClick={(e) => {
         handleScroll(e, link.href);
-        // If mobile menu is open, close it
         if (isMobile) {
-          const closeButton = document.querySelector('[data-radix-dialog-default-open="false"] > button'); // This might need a more robust selector or state management
-          (closeButton as HTMLElement)?.click();
+          // Attempt to close sheet - more robust way would be managing sheet's open state via prop
+          const sheetCloseButton = document.querySelector('#mobile-menu-close-button') as HTMLElement;
+          sheetCloseButton?.click();
         }
       }}
       className={cn(
         "font-medium transition-colors hover:text-accent",
         activeLink === link.href ? "text-accent" : "text-foreground/80",
-        isMobile ? "text-lg py-2" : "text-sm"
+        isMobile ? "text-lg py-3 block w-full text-left px-3" : "text-sm px-3 py-2" // Adjusted padding for mobile
       )}
     >
       {link.label}
@@ -106,8 +101,21 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 max-w-screen-2xl items-center justify-between">
-        <Link href="/" onClick={(e) => { e.preventDefault(); window.scrollTo({top: 0, behavior: 'smooth'}); setActiveLink('');}} className="flex items-center gap-2 text-primary hover:text-accent transition-colors">
+      <div className="container flex h-16 max-w-screen-2xl items-center justify-between px-4 md:px-6">
+        <Link 
+          href="/" 
+          onClick={(e) => { 
+            e.preventDefault(); 
+            window.scrollTo({top: 0, behavior: 'smooth'}); 
+            setActiveLink('');
+            if (isMobile) {
+              const sheetCloseButton = document.querySelector('#mobile-menu-close-button') as HTMLElement;
+              sheetCloseButton?.click();
+            }
+          }} 
+          className="flex items-center gap-2 text-primary hover:text-accent transition-colors"
+          aria-label="PhotoFlow Home"
+        >
           <Camera className="h-6 w-6 text-accent" />
           <span className="font-bold text-xl">PhotoFlow</span>
         </Link>
@@ -119,18 +127,31 @@ export function Header() {
                 <Menu className="h-6 w-6" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-[240px] bg-background p-6">
-               <Link href="/" onClick={(e) => { e.preventDefault(); window.scrollTo({top: 0, behavior: 'smooth'}); setActiveLink('');}} className="flex items-center gap-2 text-primary hover:text-accent transition-colors mb-8">
+            <SheetContent side="right" className="w-[260px] bg-background p-6 flex flex-col">
+               <Link 
+                  href="/" 
+                  onClick={(e) => { 
+                    e.preventDefault(); 
+                    window.scrollTo({top: 0, behavior: 'smooth'}); 
+                    setActiveLink('');
+                    const sheetCloseButton = document.querySelector('#mobile-menu-close-button') as HTMLElement;
+                    sheetCloseButton?.click();
+                  }} 
+                  className="flex items-center gap-2 text-primary hover:text-accent transition-colors mb-6"
+                  aria-label="PhotoFlow Home"
+                >
                 <Camera className="h-6 w-6 text-accent" />
                 <span className="font-bold text-xl">PhotoFlow</span>
               </Link>
-              <nav className="flex flex-col space-y-3">
+              <nav className="flex flex-col space-y-2 mt-4"> {/* Adjusted spacing */}
                 {navItems}
               </nav>
+              {/* Hidden button to control sheet closure programmatically */}
+              <button id="mobile-menu-close-button" data-radix-dialog-default-open="false" className="hidden"></button>
             </SheetContent>
           </Sheet>
         ) : (
-          <nav className="flex items-center gap-6">
+          <nav className="flex items-center gap-2 md:gap-4"> {/* Adjusted gap */}
             {navItems}
           </nav>
         )}
