@@ -1,8 +1,7 @@
-
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'; // Added for getPublicPhotos
 import type { Photo } from '@/types';
@@ -13,11 +12,11 @@ const PHOTO_BUCKET_NAME = 'photoflow_photos'; // Ensure this matches your Supaba
 const PhotoBaseSchema = z.object({
   alt: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
-  // display_order is removed from base, will be auto-managed or handled by specific reordering actions
 });
 
 const CreatePhotoSchema = PhotoBaseSchema.extend({
-  file: z.instanceof(File).refine(file => file.size > 0, 'File is required.'),
+  file: z.instanceof(File).refine(file => file.size > 0, 'File is required.')
+                         .refine(file => file.size <= 10 * 1024 * 1024, 'File size should be less than 10MB.'), // Example: 10MB limit
 });
 
 const UpdatePhotoSchema = PhotoBaseSchema.extend({
@@ -50,153 +49,197 @@ async function getMaxDisplayOrder(supabase: ReturnType<typeof createSupabaseServ
 
 
 export async function uploadPhoto(prevState: PhotoActionState | undefined, formData: FormData): Promise<PhotoActionState> {
-  const supabase = createSupabaseServiceRoleClient();
-  
-  const validatedFields = CreatePhotoSchema.safeParse({
-    file: formData.get('file'),
-    alt: formData.get('alt') || null,
-    description: formData.get('description') || null,
-  });
+  try {
+    const supabase = createSupabaseServiceRoleClient();
+    
+    const validatedFields = CreatePhotoSchema.safeParse({
+      file: formData.get('file'),
+      alt: formData.get('alt') || null,
+      description: formData.get('description') || null,
+    });
 
-  if (!validatedFields.success) {
+    if (!validatedFields.success) {
+      console.error("Validation Errors:", validatedFields.error.flatten().fieldErrors);
+      return {
+        errors: validatedFields.error.flatten().fieldErrors,
+        message: 'Validation failed. Please check the form fields.',
+        success: false,
+      };
+    }
+    
+    const { file, alt, description } = validatedFields.data;
+    
+    // Sanitize filename (basic example, consider more robust library if needed)
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `public/${Date.now()}-${safeFileName}`;
+
+    // Upload file to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from(PHOTO_BUCKET_NAME)
+      .upload(filePath, file);
+
+    if (uploadError) {
+      console.error('Storage Upload Error:', uploadError);
+      return { message: `Storage Error: ${uploadError.message}`, success: false, errors: { file: ["Failed to upload to storage. Check file type/size or bucket permissions."] } };
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from(PHOTO_BUCKET_NAME)
+      .getPublicUrl(filePath);
+    
+    if (!urlData?.publicUrl) {
+      console.error('Failed to get public URL for:', filePath);
+      await supabase.storage.from(PHOTO_BUCKET_NAME).remove([filePath]).catch(err => console.error("Failed to remove orphaned file after URL failure:", err));
+      return { message: 'Could not get public URL for the uploaded file.', success: false, errors: { general: ["Failed to process file after upload."] } };
+    }
+
+    const display_order = (await getMaxDisplayOrder(supabase)) + 1;
+
+    const { data: photo, error: dbError } = await supabase
+      .from('photos')
+      .insert({
+        src: urlData.publicUrl,
+        alt: alt,
+        description: description,
+        display_order: display_order,
+      })
+      .select()
+      .single();
+
+    if (dbError) {
+      console.error('Database Insert Error:', dbError);
+      await supabase.storage.from(PHOTO_BUCKET_NAME).remove([filePath]).catch(err => console.error("Failed to remove orphaned file after DB failure:", err));
+      return { message: `Database Error: ${dbError.message}`, success: false, errors: { general: ["Failed to save photo details to database."] } };
+    }
+
+    revalidatePath('/admin/photos');
+    revalidatePath('/');
+    return { message: 'Photo uploaded successfully!', success: true, photo };
+
+  } catch (error: unknown) {
+    console.error("Unhandled error in uploadPhoto action:", error);
+    let errorMessage = "An unexpected server error occurred. Please check server logs.";
+    
+    if (error instanceof ZodError) { // Should be caught by validatedFields.success check, but as a safeguard
+        return {
+            errors: error.flatten().fieldErrors,
+            message: "A validation error occurred during processing.",
+            success: false,
+        };
+    } else if (error instanceof Error) {
+        // Avoid exposing too much detail from generic Error objects if not desired
+        // errorMessage = error.message; // Potentially too detailed for client
+        // Keep the generic message or a sanitized one
+    }
+    
     return {
-      errors: validatedFields.error.flatten().fieldErrors,
-      message: 'Validation failed.',
+      message: errorMessage,
       success: false,
+      errors: { general: [errorMessage] } 
     };
   }
-  
-  const { file, alt, description } = validatedFields.data;
-  
-  const filePath = `public/${Date.now()}-${file.name}`;
-
-  // Upload file to Supabase Storage
-  const { error: uploadError } = await supabase.storage
-    .from(PHOTO_BUCKET_NAME)
-    .upload(filePath, file);
-
-  if (uploadError) {
-    console.error('Storage Upload Error:', uploadError);
-    return { message: `Storage Error: ${uploadError.message}`, success: false };
-  }
-
-  // Get public URL
-  const { data: urlData } = supabase.storage
-    .from(PHOTO_BUCKET_NAME)
-    .getPublicUrl(filePath);
-  
-  if (!urlData?.publicUrl) {
-    // Attempt to delete the orphaned file from storage if URL retrieval fails
-    await supabase.storage.from(PHOTO_BUCKET_NAME).remove([filePath]);
-    return { message: 'Could not get public URL for the uploaded file.', success: false };
-  }
-
-  // Always calculate display_order as max + 1 for new uploads
-  const display_order = (await getMaxDisplayOrder(supabase)) + 1;
-
-  // Insert photo metadata into database
-  const { data: photo, error: dbError } = await supabase
-    .from('photos')
-    .insert({
-      src: urlData.publicUrl,
-      alt: alt,
-      description: description,
-      display_order: display_order,
-    })
-    .select()
-    .single();
-
-  if (dbError) {
-    console.error('Database Insert Error:', dbError);
-    // Attempt to delete the orphaned file from storage if DB insert fails
-    await supabase.storage.from(PHOTO_BUCKET_NAME).remove([filePath]);
-    return { message: `Database Error: ${dbError.message}`, success: false };
-  }
-
-  revalidatePath('/admin/photos');
-  revalidatePath('/'); // Revalidate home page where gallery is shown
-  return { message: 'Photo uploaded successfully!', success: true, photo };
 }
 
 export async function updatePhotoDetails(prevState: PhotoActionState | undefined, formData: FormData): Promise<PhotoActionState> {
-  const supabase = createSupabaseServiceRoleClient();
-  const id = formData.get('id') as string;
+ try {
+    const supabase = createSupabaseServiceRoleClient();
+    const id = formData.get('id') as string;
 
-  const validatedFields = UpdatePhotoSchema.safeParse({
-    id: id,
-    alt: formData.get('alt') || null,
-    description: formData.get('description') || null,
-    // display_order is removed from form submission for updates
-  });
+    const validatedFields = UpdatePhotoSchema.safeParse({
+      id: id,
+      alt: formData.get('alt') || null,
+      description: formData.get('description') || null,
+    });
 
-  if (!validatedFields.success) {
+    if (!validatedFields.success) {
+      return {
+        errors: validatedFields.error.flatten().fieldErrors,
+        message: 'Validation failed.',
+        success: false,
+      };
+    }
+
+    const { alt, description } = validatedFields.data;
+
+    const { data: photo, error } = await supabase
+      .from('photos')
+      .update({
+        alt,
+        description,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Update Photo Error:', error);
+      return { message: `Database Error: ${error.message}`, success: false, errors: { general: ["Failed to update photo details."] } };
+    }
+
+    revalidatePath('/admin/photos');
+    revalidatePath('/');
+    return { message: 'Photo details updated successfully!', success: true, photo };
+  } catch (error: unknown) {
+    console.error("Unhandled error in updatePhotoDetails action:", error);
+    let errorMessage = "An unexpected server error occurred during update. Please check server logs.";
+     if (error instanceof Error) {
+        // errorMessage = error.message; 
+    }
     return {
-      errors: validatedFields.error.flatten().fieldErrors,
-      message: 'Validation failed.',
+      message: errorMessage,
       success: false,
+      errors: { general: [errorMessage] }
     };
   }
-
-  const { alt, description } = validatedFields.data;
-
-  const { data: photo, error } = await supabase
-    .from('photos')
-    .update({
-      alt,
-      description,
-      // display_order is not updated here. Reordering would be a separate action.
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) {
-    console.error('Update Photo Error:', error);
-    return { message: `Database Error: ${error.message}`, success: false };
-  }
-
-  revalidatePath('/admin/photos');
-  revalidatePath('/');
-  return { message: 'Photo details updated successfully!', success: true, photo };
 }
 
 export async function deletePhoto(id: string, src: string): Promise<PhotoActionState> {
-  const supabase = createSupabaseServiceRoleClient();
+  try {
+    const supabase = createSupabaseServiceRoleClient();
 
-  // Extract file path from src URL. Example: https://<project>.supabase.co/storage/v1/object/public/photoflow_photos/public/image.jpg
-  // Path in bucket is 'public/image.jpg'
-  const urlParts = src.split(`/storage/v1/object/public/${PHOTO_BUCKET_NAME}/`);
-  if (urlParts.length < 2) {
-      return { message: 'Invalid photo source URL format.', success: false };
+    const urlParts = src.split(`/storage/v1/object/public/${PHOTO_BUCKET_NAME}/`);
+    if (urlParts.length < 2) {
+        return { message: 'Invalid photo source URL format.', success: false, errors: { general: ["Cannot determine file path from URL."] } };
+    }
+    const filePath = urlParts[1];
+
+    const { error: storageError } = await supabase.storage
+      .from(PHOTO_BUCKET_NAME)
+      .remove([filePath]);
+
+    if (storageError) {
+      console.error('Storage Delete Error (proceeding with DB deletion):', storageError);
+      // Optionally, return an error here if critical, or just log and continue
+    }
+
+    const { error: dbError } = await supabase.from('photos').delete().eq('id', id);
+
+    if (dbError) {
+      console.error('Database Delete Error:', dbError);
+      return { message: `Database Error: ${dbError.message}`, success: false, errors: { general: ["Failed to delete photo from database."] } };
+    }
+
+    revalidatePath('/admin/photos');
+    revalidatePath('/');
+    return { message: 'Photo deleted successfully!', success: true };
+  } catch (error: unknown) {
+    console.error("Unhandled error in deletePhoto action:", error);
+    let errorMessage = "An unexpected server error occurred during deletion. Please check server logs.";
+    if (error instanceof Error) {
+        // errorMessage = error.message;
+    }
+    return {
+      message: errorMessage,
+      success: false,
+      errors: { general: [errorMessage] }
+    };
   }
-  const filePath = urlParts[1];
-
-  // Delete from storage
-  const { error: storageError } = await supabase.storage
-    .from(PHOTO_BUCKET_NAME)
-    .remove([filePath]);
-
-  if (storageError) {
-    // Log error but proceed to delete from DB to avoid orphaned DB record if file already gone or other issue.
-    console.error('Storage Delete Error (proceeding with DB deletion):', storageError);
-  }
-
-  // Delete from database
-  const { error: dbError } = await supabase.from('photos').delete().eq('id', id);
-
-  if (dbError) {
-    console.error('Database Delete Error:', dbError);
-    return { message: `Database Error: ${dbError.message}`, success: false };
-  }
-
-  revalidatePath('/admin/photos');
-  revalidatePath('/');
-  return { message: 'Photo deleted successfully!', success: true };
 }
 
 export async function getPhotos(): Promise<Photo[]> {
-  const supabase = createSupabaseServiceRoleClient(); // Use service role for admin fetching to bypass RLS if needed, or client if RLS is public
+  const supabase = createSupabaseServiceRoleClient();
   const { data, error } = await supabase
     .from('photos')
     .select('*')
@@ -210,14 +253,8 @@ export async function getPhotos(): Promise<Photo[]> {
   return data || [];
 }
 
-// For public gallery
 export async function getPublicPhotos(): Promise<Photo[]> {
-  // This function should be called client-side or in a context where a browser client is appropriate.
-  // For server-side rendering of public data where RLS allows public read,
-  // createSupabaseServerClient() could be used.
-  // For client-side components, createSupabaseBrowserClient() is correct.
-  // Assuming this might be called from a server component for the public page:
-  const supabase = createSupabaseServiceRoleClient(); // Or createSupabaseServerClient() if RLS allows public access without service role
+  const supabase = createSupabaseServiceRoleClient(); 
   
   const { data, error } = await supabase
     .from('photos')

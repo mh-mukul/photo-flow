@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useRef, useState, useActionState } from 'react';
@@ -55,12 +54,10 @@ export function UploadPhotoForm({
       setPreview(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       formRef.current?.reset();
-      if (onOpenChange) onOpenChange(false); // Close dialog on success
-      if (onSuccess) onSuccess(); // Trigger refetch or list update
-    } else if (state?.message && state.errors) {
+      if (onOpenChange) onOpenChange(false); 
+      if (onSuccess) onSuccess(); 
+    } else if (state?.message && (state.errors || !state.success)) { // Show toast if message and (errors exist OR not successful)
       toast({ variant: "destructive", title: "Error", description: state.message });
-    } else if (state?.message && !state.errors) { // Generic error message
-       toast({ variant: "destructive", title: "Error", description: state.message });
     }
   }, [state, toast, photoToEdit, onOpenChange, onSuccess]);
 
@@ -68,9 +65,9 @@ export function UploadPhotoForm({
     if (photoToEdit) {
       setPreview(photoToEdit.src);
     } else {
-      setPreview(null); // Clear preview when form is for new upload
+      setPreview(null); 
     }
-  }, [photoToEdit, isOpen]); // Depend on isOpen to reset form state if modal is reused
+  }, [photoToEdit, isOpen]); 
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -91,7 +88,7 @@ export function UploadPhotoForm({
       
       {!photoToEdit && (
         <div className="space-y-2">
-          <Label htmlFor="file">Photo File</Label>
+          <Label htmlFor="file">Photo File (Max 10MB)</Label>
           <Input
             id="file"
             name="file"
@@ -104,7 +101,7 @@ export function UploadPhotoForm({
           />
           {preview && (
             <div className="mt-2 relative w-full h-48">
-              <Image src={preview} alt="Preview" fill objectFit="contain" className="rounded-md border" />
+              <Image src={preview} alt="Preview" fill style={{objectFit:"contain"}} className="rounded-md border" />
             </div>
           )}
           {state?.errors?.file && <p className="text-xs text-destructive">{state.errors.file.join(', ')}</p>}
@@ -113,7 +110,7 @@ export function UploadPhotoForm({
 
       {photoToEdit && preview && (
          <div className="mt-2 relative w-full h-48">
-            <Image src={preview} alt={photoToEdit.alt || "Photo preview"} fill objectFit="contain" className="rounded-md border" />
+            <Image src={preview} alt={photoToEdit.alt || "Photo preview"} fill style={{objectFit:"contain"}} className="rounded-md border" />
         </div>
       )}
 
@@ -142,20 +139,23 @@ export function UploadPhotoForm({
         {state?.errors?.description && <p className="text-xs text-destructive">{state.errors.description.join(', ')}</p>}
       </div>
 
-      {/* Display Order field removed as per requirement */}
-
       {state?.message && !state.success && (
         <Alert variant="destructive" className="mt-4">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Operation Failed</AlertTitle>
           <AlertDescription>
             {state.message}
-            {state.errors && Object.values(state.errors).flat().map((err, i) => <div key={i}>{err}</div>)}
+            {state.errors && Object.entries(state.errors).map(([field, fieldErrors]) => (
+              <div key={field} className="mt-1">
+                {/* {field !== 'general' && <strong className="capitalize">{field}: </strong>} */}
+                {Array.isArray(fieldErrors) ? fieldErrors.join(', ') : String(fieldErrors)}
+              </div>
+            ))}
           </AlertDescription>
         </Alert>
       )}
       
-      {!isOpen && (
+      {!isOpen && ( // If not in a dialog, show submit button in the form
         <div className="flex justify-end">
           <SubmitButton isEditing={!!photoToEdit} />
         </div>
@@ -163,7 +163,7 @@ export function UploadPhotoForm({
     </form>
   );
 
-  if (isOpen && onOpenChange) { // Render as a Dialog
+  if (isOpen && onOpenChange) { 
     return (
       <Dialog open={isOpen} onOpenChange={(open) => {
         if (!open) {
@@ -186,10 +186,17 @@ export function UploadPhotoForm({
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
+             {/* This SubmitButton is for the Dialog context */}
+             {/* We directly use the Button component and trigger form submission */}
              <Button 
               onClick={() => {
-                formRef.current?.requestSubmit();
+                // Programmatically submit the form
+                // formRef.current is connected to the form inside formContent
+                formRef.current?.requestSubmit(); 
               }}
+              // The status (pending) is handled by useFormStatus inside SubmitButton if we were to use it,
+              // but for simplicity, we'll just have a button that triggers submit.
+              // For pending state in dialog footer, you'd need to lift useFormStatus or pass pending state down.
             >
               {photoToEdit ? (
                 <><Save className="mr-2 h-4 w-4" /> Save Changes</>
@@ -203,5 +210,5 @@ export function UploadPhotoForm({
     );
   }
 
-  return formContent;
+  return formContent; // Standalone form (not in a dialog)
 }
