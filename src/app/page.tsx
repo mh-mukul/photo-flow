@@ -1,34 +1,7 @@
+
 import { ImageGallery } from '@/components/features/image-gallery';
 import { AboutMe } from '@/components/features/about-me';
-import { Button } from '@/components/ui/button';
-import Link from 'next/link';
-import { ArrowDown } from 'lucide-react';
-
-// Client component for smooth scroll functionality
-function HeroClientButton() {
-  "use client";
-  const handleScrollToGallery = (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
-    e.preventDefault();
-    const galleryElement = document.getElementById('gallery');
-    galleryElement?.scrollIntoView({ behavior: 'smooth' });
-    
-    // Update URL hash without page jump for better UX and history
-    if (history.pushState) {
-      history.pushState(null, "", "#gallery");
-    } else {
-      window.location.hash = "#gallery";
-    }
-  };
-
-  return (
-     <Button asChild size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90 group rounded-lg px-8 py-6 text-lg shadow-lg hover:shadow-accent/50 transition-all duration-300 ease-in-out transform hover:scale-105">
-        <Link href="#gallery" onClick={handleScrollToGallery}>
-          View My Work
-          <ArrowDown className="ml-2 h-5 w-5 transition-transform duration-300 group-hover:translate-y-1" />
-        </Link>
-      </Button>
-  );
-}
+import { HeroClientButton } from '@/components/features/hero-client-button';
 
 function HeroSection() {
   return (

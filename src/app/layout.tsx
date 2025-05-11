@@ -6,17 +6,17 @@ import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { Toaster } from "@/components/ui/toaster";
 
-const geistSans = GeistSans({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-  display: 'swap', // Improves font loading
-});
+// const geistSans = GeistSans({ // This was incorrect, GeistSans is not a function
+//   variable: '--font-geist-sans',
+//   subsets: ['latin'],
+//   display: 'swap', 
+// });
 
-const geistMono = GeistMono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-  display: 'swap', // Improves font loading
-});
+// const geistMono = GeistMono({ // This was incorrect, GeistMono is not a function
+//   variable: '--font-geist-mono',
+//   subsets: ['latin'],
+//   display: 'swap', 
+// });
 
 export const metadata: Metadata = {
   title: 'PhotoFlow | Photography Portfolio',
@@ -33,8 +33,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark"> {/* Apply dark theme globally */}
-      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable} dark`}> {/* Apply dark theme and font variables globally */}
+      <body className={`font-sans antialiased`}> {/* font-sans will use --font-geist-sans defined in html tag */}
         <div className="flex flex-col min-h-screen">
           <Header />
           <main className="flex-grow">
