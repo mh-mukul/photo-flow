@@ -7,30 +7,45 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Card, CardContent } from '@/components/ui/card';
 import { TypingAnimation } from '@/components/effects/typing-animation';
+import type { Photo } from '@/types';
+import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 // Register GSAP plugin if it hasn't been already (safe to call multiple times)
 if (typeof window !== "undefined") {
   gsap.registerPlugin(ScrollTrigger);
 }
 
-const galleryImages = [
-  { id: 1, src: 'https://picsum.photos/seed/img1/800/600', alt: 'Abstract Mountains', hint: 'mountains abstract', aspectRatio: 'aspect-[4/3]', description: "Vast mountain ranges under a cloudy sky, rendered in an abstract style." },
-  { id: 2, src: 'https://picsum.photos/seed/img2/800/600', alt: 'City Skyline at Dusk', hint: 'city dusk', aspectRatio: 'aspect-[4/3]', description: "A sprawling city skyline illuminated as dusk settles over the urban landscape." },
-  { id: 3, src: 'https://picsum.photos/seed/img3/800/600', alt: 'Forest Path in Autumn', hint: 'forest autumn', aspectRatio: 'aspect-[4/3]', description: "A serene forest path carpeted with colorful autumn leaves, inviting a peaceful walk." },
-  { id: 4, src: 'https://picsum.photos/seed/img4/800/600', alt: 'Coastal Waves Crashing', hint: 'ocean waves', aspectRatio: 'aspect-[4/3]', description: "Powerful ocean waves dynamically crashing against a rugged and rocky coastline." },
-  { id: 5, src: 'https://picsum.photos/seed/img5/800/600', alt: 'Desert Landscape Panorama', hint: 'desert dunes', aspectRatio: 'aspect-[4/3]', description: "An expansive panoramic view of desert dunes under a clear, vast blue sky." },
-  { id: 6, src: 'https://picsum.photos/seed/img6/800/600', alt: 'Close-up of a Vibrant Flower', hint: 'flower macro', aspectRatio: 'aspect-[4/3]', description: "A detailed macro photograph capturing the vibrant colors and intricate textures of a flower." },
-  { id: 7, src: 'https://picsum.photos/seed/img7/800/600', alt: 'Starry Night Sky View', hint: 'stars galaxy', aspectRatio: 'aspect-[4/3]', description: "A breathtaking view of a starry night sky, with a distant galaxy subtly visible." },
-  { id: 8, src: 'https://picsum.photos/seed/img8/800/600', alt: 'Urban Street Art Mural', hint: 'street art', aspectRatio: 'aspect-[4/3]', description: "Colorful and expressive street art adorning an urban wall, showcasing modern creativity." },
-  { id: 9, src: 'https://picsum.photos/seed/img9/800/600', alt: 'Wildlife in Natural Habitat', hint: 'animal wildlife', aspectRatio: 'aspect-[4/3]', description: "A majestic wild animal captured in a stunning moment within its natural habitat." },
-];
-
 export function ImageGallery() {
   const galleryRef = useRef<HTMLDivElement>(null);
   const imageElementsRef = useRef<(HTMLDivElement | null)[]>([]);
-  const [hoveredImageId, setHoveredImageId] = useState<number | null>(null);
+  const [hoveredImageId, setHoveredImageId] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    async function fetchPhotos() {
+      setIsLoading(true);
+      const supabase = createSupabaseBrowserClient();
+      const { data, error } = await supabase
+        .from('photos')
+        .select('*')
+        .order('display_order', { ascending: true })
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching photos for gallery:', error);
+        setPhotos([]);
+      } else {
+        setPhotos(data || []);
+      }
+      setIsLoading(false);
+    }
+    fetchPhotos();
+  }, []);
+
+  useEffect(() => {
+    if (isLoading || photos.length === 0) return;
+
     const imageElements = imageElementsRef.current.filter(el => el !== null) as HTMLDivElement[];
     
     if (imageElements.length === 0) return;
@@ -58,9 +73,32 @@ export function ImageGallery() {
 
     return () => {
       ScrollTrigger.getAll().forEach(trigger => trigger.kill());
-      imageElementsRef.current = [];
+      // imageElementsRef.current = []; // Keep refs for potential re-renders unless photos change
     };
-  }, []);
+  }, [photos, isLoading]); // Rerun animation setup if photos or loading state changes
+
+  if (isLoading) {
+    return (
+      <section id="gallery" className="py-16 md:py-24 bg-secondary">
+        <div className="container max-w-screen-xl mx-auto px-4 text-center">
+          <p className="text-lg text-foreground">Loading gallery...</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (!photos.length) {
+    return (
+      <section id="gallery" className="py-16 md:py-24 bg-secondary">
+        <div className="container max-w-screen-xl mx-auto px-4 text-center">
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-center mb-12 md:mb-16 text-primary tracking-tight">
+            Portfolio Showcase
+          </h2>
+          <p className="text-lg text-muted-foreground">No photos available in the gallery yet. Check back soon!</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section id="gallery" className="py-16 md:py-24 bg-secondary">
@@ -72,34 +110,34 @@ export function ImageGallery() {
           ref={galleryRef}
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 auto-rows-fr"
         >
-          {galleryImages.map((image, index) => (
+          {photos.map((image, index) => (
             <div
               key={image.id}
               ref={(el) => (imageElementsRef.current[index] = el)}
-              className="gallery-item group opacity-0 relative"
+              className="gallery-item group opacity-0 relative" // Initial opacity 0 for GSAP
               onMouseEnter={() => setHoveredImageId(image.id)}
               onMouseLeave={() => setHoveredImageId(null)}
             >
               <Card className="overflow-hidden bg-card border-border shadow-lg hover:shadow-accent/30 transition-all duration-300 ease-in-out rounded-lg h-full flex flex-col">
                 <CardContent className="p-0 flex-grow relative">
-                  <div className={`relative w-full ${image.aspectRatio} overflow-hidden`}>
+                  <div className={`relative w-full aspect-[4/3] overflow-hidden`}> {/* Standard aspect ratio */}
                     <Image
                       src={image.src}
-                      alt={image.alt}
+                      alt={image.alt || 'Portfolio image'}
                       fill
                       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       className="object-cover group-hover:scale-105 transition-transform duration-500 ease-in-out"
-                      priority={index < 3}
-                      data-ai-hint={image.hint}
+                      priority={index < 3} // Prioritize loading for first few images
+                      data-ai-hint={image.alt ? image.alt.split(' ').slice(0,2).join(' ') : "landscape abstract"} // Use alt for hint
                     />
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 ease-in-out flex flex-col justify-end h-[110px]">
-                    <h3 className="text-primary font-semibold text-base mb-1 truncate">{image.alt}</h3>
+                    <h3 className="text-primary font-semibold text-base mb-1 truncate">{image.alt || 'Untitled'}</h3>
                     {image.description && (
-                      <div className="h-[3.75rem] overflow-hidden"> {/* Approx 3 lines for text-sm (0.875rem * 1.5 line-height * 3 lines) */}
+                      <div className="h-[3.75rem] overflow-hidden">
                         <TypingAnimation
                           text={image.description}
-                          speed={25} // Adjusted speed
+                          speed={25}
                           className="text-sm text-foreground/90 leading-relaxed"
                           startCondition={hoveredImageId === image.id}
                         />
