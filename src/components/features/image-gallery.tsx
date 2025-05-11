@@ -36,7 +36,11 @@ export function ImageGallery() {
         console.error('Error fetching photos for gallery:', error);
         setPhotos([]);
       } else {
-        setPhotos(data || []);
+        // Filter out photos with invalid src before setting state
+        const validPhotos = (data || []).filter(
+          (photo) => typeof photo.src === 'string' && photo.src.trim() !== ''
+        );
+        setPhotos(validPhotos);
       }
       setIsLoading(false);
     }
@@ -153,3 +157,4 @@ export function ImageGallery() {
     </section>
   );
 }
+
