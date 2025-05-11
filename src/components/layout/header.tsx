@@ -4,9 +4,9 @@
 import Link from 'next/link';
 import { Camera, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { cn } from '@/lib/utils';
 
 const navLinks = [
@@ -14,20 +14,35 @@ const navLinks = [
   { href: '#about', label: 'About Me' },
 ];
 
-export function Header() {
+interface HeaderProps {
+  isAdminLogin?: boolean;
+}
+
+export function Header({ isAdminLogin = false }: HeaderProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [activeLink, setActiveLink] = useState('');
-  const isMobile = useIsMobile(); 
+  const isMobile = useIsMobile();
+  const sheetCloseRef = useRef<HTMLButtonElement>(null);
+
 
   useEffect(() => {
     setIsMounted(true);
-    const currentHash = window.location.hash;
-    if (currentHash) {
-      setActiveLink(currentHash);
+    if (!isAdminLogin) {
+      const currentHash = window.location.hash;
+      if (currentHash) {
+        setActiveLink(currentHash);
+      }
     }
-  }, []);
+  }, [isAdminLogin]);
 
   const handleScroll = (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>, href: string) => {
+    if (isAdminLogin) {
+      // For admin login, just navigate if it's a full path
+      if (!href.startsWith('#')) {
+        // Standard link behavior will apply if not a hash link
+        return;
+      }
+    }
     e.preventDefault();
     setActiveLink(href);
     const targetId = href.replace(/.*#/, "");
@@ -42,6 +57,8 @@ export function Header() {
   };
   
   useEffect(() => {
+    if (isAdminLogin || typeof window === 'undefined') return;
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -60,7 +77,19 @@ export function Header() {
     });
 
     return () => observer.disconnect();
-  }, []);
+  }, [isAdminLogin]);
+
+  const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
+    if (!isAdminLogin) {
+      e.preventDefault(); 
+      window.scrollTo({top: 0, behavior: 'smooth'}); 
+      setActiveLink('');
+      if (isMobile && sheetCloseRef.current) {
+        sheetCloseRef.current.click();
+      }
+    }
+    // For admin login or if it's a full path, allow default Link behavior
+  };
 
 
   if (!isMounted) {
@@ -71,7 +100,7 @@ export function Header() {
             <Camera className="h-6 w-6 text-accent" />
             <span className="font-bold text-xl">PhotoFlow</span>
           </div>
-          <div className="hidden md:flex h-6 w-32 bg-muted rounded animate-pulse"></div>
+          {!isAdminLogin && <div className="hidden md:flex h-6 w-32 bg-muted rounded animate-pulse"></div>}
         </div>
       </header>
     );
@@ -83,16 +112,14 @@ export function Header() {
       href={link.href}
       onClick={(e) => {
         handleScroll(e, link.href);
-        if (isMobile) {
-          // Attempt to close sheet - more robust way would be managing sheet's open state via prop
-          const sheetCloseButton = document.querySelector('#mobile-menu-close-button') as HTMLElement;
-          sheetCloseButton?.click();
+        if (isMobile && sheetCloseRef.current) {
+          sheetCloseRef.current.click();
         }
       }}
       className={cn(
         "font-medium transition-colors hover:text-accent",
         activeLink === link.href ? "text-accent" : "text-foreground/80",
-        isMobile ? "text-lg py-3 block w-full text-left px-3" : "text-sm px-3 py-2" // Adjusted padding for mobile
+        isMobile ? "text-lg py-3 block w-full text-left px-3" : "text-sm px-3 py-2" 
       )}
     >
       {link.label}
@@ -104,15 +131,7 @@ export function Header() {
       <div className="container flex h-16 max-w-screen-2xl items-center justify-between px-4 md:px-6">
         <Link 
           href="/" 
-          onClick={(e) => { 
-            e.preventDefault(); 
-            window.scrollTo({top: 0, behavior: 'smooth'}); 
-            setActiveLink('');
-            if (isMobile) {
-              const sheetCloseButton = document.querySelector('#mobile-menu-close-button') as HTMLElement;
-              sheetCloseButton?.click();
-            }
-          }} 
+          onClick={handleLogoClick}
           className="flex items-center gap-2 text-primary hover:text-accent transition-colors"
           aria-label="PhotoFlow Home"
         >
@@ -120,7 +139,7 @@ export function Header() {
           <span className="font-bold text-xl">PhotoFlow</span>
         </Link>
         
-        {isMobile ? (
+        {!isAdminLogin && isMobile ? (
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" aria-label="Toggle menu">
@@ -131,11 +150,7 @@ export function Header() {
                <Link 
                   href="/" 
                   onClick={(e) => { 
-                    e.preventDefault(); 
-                    window.scrollTo({top: 0, behavior: 'smooth'}); 
-                    setActiveLink('');
-                    const sheetCloseButton = document.querySelector('#mobile-menu-close-button') as HTMLElement;
-                    sheetCloseButton?.click();
+                    handleLogoClick(e); // Use existing logic
                   }} 
                   className="flex items-center gap-2 text-primary hover:text-accent transition-colors mb-6"
                   aria-label="PhotoFlow Home"
@@ -143,18 +158,17 @@ export function Header() {
                 <Camera className="h-6 w-6 text-accent" />
                 <span className="font-bold text-xl">PhotoFlow</span>
               </Link>
-              <nav className="flex flex-col space-y-2 mt-4"> {/* Adjusted spacing */}
+              <nav className="flex flex-col space-y-2 mt-4">
                 {navItems}
               </nav>
-              {/* Hidden button to control sheet closure programmatically */}
-              <button id="mobile-menu-close-button" data-radix-dialog-default-open="false" className="hidden"></button>
+              <SheetClose ref={sheetCloseRef} className="hidden" />
             </SheetContent>
           </Sheet>
-        ) : (
-          <nav className="flex items-center gap-2 md:gap-4"> {/* Adjusted gap */}
+        ) : !isAdminLogin ? (
+          <nav className="flex items-center gap-2 md:gap-4">
             {navItems}
           </nav>
-        )}
+        ) : null}
       </div>
     </header>
   );

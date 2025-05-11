@@ -19,13 +19,16 @@ export default function RootLayout({
 }>) {
   const pathname = headers().get('next-url') || '';
   const isAdminRoute = pathname.startsWith('/admin');
+  const isAdminLoginPage = pathname === '/admin/login';
 
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable} dark`}>
       <head />
       <body className={`font-sans antialiased`}>
         <div className="flex flex-col min-h-screen">
-          {!isAdminRoute && <Header />}
+          {/* Conditionally render Header based on route */}
+          {/* Show header without nav items for admin login, regular header for public, no header for other admin routes */}
+          {!isAdminRoute || isAdminLoginPage ? <Header isAdminLogin={isAdminLoginPage} /> : null}
           <main className="flex-grow">
             {children}
           </main>
