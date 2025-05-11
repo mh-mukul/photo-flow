@@ -209,7 +209,7 @@ export async function deletePhoto(id: string, src: string): Promise<PhotoActionS
       return { message: "Invalid photo ID format for deletion.", success: false, errors: { id: idValidation.error.flatten().fieldErrors.id }};
     }
 
-
+    // Delete from database
     const { error: dbError } = await supabase.from('photos').delete().eq('id', id);
 
     if (dbError) {
@@ -220,6 +220,7 @@ export async function deletePhoto(id: string, src: string): Promise<PhotoActionS
     revalidatePath('/admin/photos');
     revalidatePath('/');
     return { message: 'Photo deleted successfully!', success: true };
+
   } catch (error: unknown) {
     console.error("Unhandled error in deletePhoto action:", error);
     let errorMessage = "An unexpected server error occurred during deletion. Please check server logs.";
@@ -277,3 +278,5 @@ export async function getPublicPhotos(): Promise<Photo[]> {
   );
   return validPhotos;
 }
+
+    
