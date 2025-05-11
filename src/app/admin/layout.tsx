@@ -4,6 +4,7 @@ import { LogOut, Image as ImageIcon, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { logout } from '@/actions/auth';
+import { headers } from 'next/headers';
 
 export const metadata: Metadata = {
   title: 'PhotoFlow Admin',
@@ -15,6 +16,12 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = headers().get('next-url');
+
+  if (pathname === '/admin/login') {
+    return <>{children}</>; // Render children directly without sidebar for login page
+  }
+
   return (
     <div className="flex min-h-screen bg-muted/40">
       <aside className="sticky top-0 h-screen w-64 bg-background border-r border-border flex flex-col">

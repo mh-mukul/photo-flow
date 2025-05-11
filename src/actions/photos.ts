@@ -13,7 +13,7 @@ const PHOTO_BUCKET_NAME = 'photoflow_photos'; // Ensure this matches your Supaba
 const PhotoBaseSchema = z.object({
   alt: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
-  display_order: z.coerce.number().int().min(0),
+  // display_order is removed from base, will be auto-managed or handled by specific reordering actions
 });
 
 const CreatePhotoSchema = PhotoBaseSchema.extend({
@@ -52,17 +52,10 @@ async function getMaxDisplayOrder(supabase: ReturnType<typeof createSupabaseServ
 export async function uploadPhoto(prevState: PhotoActionState | undefined, formData: FormData): Promise<PhotoActionState> {
   const supabase = createSupabaseServiceRoleClient();
   
-  // Convert display_order to number if it exists, otherwise it remains undefined for auto-increment logic
-  const displayOrderValue = formData.get('display_order');
-  const displayOrderNumber = displayOrderValue && displayOrderValue !== '' ? parseInt(displayOrderValue as string, 10) : undefined;
-
-
   const validatedFields = CreatePhotoSchema.safeParse({
     file: formData.get('file'),
     alt: formData.get('alt') || null,
     description: formData.get('description') || null,
-    // Use the processed displayOrderNumber which can be undefined
-    display_order: displayOrderNumber === undefined ? 0 : displayOrderNumber, // Pass 0 if undefined, but it will be overridden if undefined
   });
 
   if (!validatedFields.success) {
@@ -74,8 +67,7 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
   }
   
   const { file, alt, description } = validatedFields.data;
-  let { display_order } = validatedFields.data; // This will be 0 if displayOrderNumber was undefined initially
-
+  
   const filePath = `public/${Date.now()}-${file.name}`;
 
   // Upload file to Supabase Storage
@@ -99,13 +91,8 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
     return { message: 'Could not get public URL for the uploaded file.', success: false };
   }
 
-  // If display_order was not provided by user (i.e., displayOrderNumber was undefined), set it to max + 1
-  // The schema gives it a default of 0 if undefined, so we can check against that or the original undefined state.
-  // A more robust check would be against the original `displayOrderNumber` variable.
-  if (displayOrderNumber === undefined) {
-     display_order = (await getMaxDisplayOrder(supabase)) + 1;
-  }
-
+  // Always calculate display_order as max + 1 for new uploads
+  const display_order = (await getMaxDisplayOrder(supabase)) + 1;
 
   // Insert photo metadata into database
   const { data: photo, error: dbError } = await supabase
@@ -139,7 +126,7 @@ export async function updatePhotoDetails(prevState: PhotoActionState | undefined
     id: id,
     alt: formData.get('alt') || null,
     description: formData.get('description') || null,
-    display_order: parseInt(formData.get('display_order') as string, 10),
+    // display_order is removed from form submission for updates
   });
 
   if (!validatedFields.success) {
@@ -150,14 +137,14 @@ export async function updatePhotoDetails(prevState: PhotoActionState | undefined
     };
   }
 
-  const { alt, description, display_order } = validatedFields.data;
+  const { alt, description } = validatedFields.data;
 
   const { data: photo, error } = await supabase
     .from('photos')
     .update({
       alt,
       description,
-      display_order,
+      // display_order is not updated here. Reordering would be a separate action.
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)

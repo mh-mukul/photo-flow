@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useRef, useState, useActionState } from 'react'; // Changed from useFormState
+import { useEffect, useRef, useState, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,7 +43,7 @@ export function UploadPhotoForm({
 }: UploadPhotoFormProps) {
   const initialState: PhotoActionState | undefined = undefined;
   const formAction = photoToEdit ? updatePhotoDetails : uploadPhoto;
-  const [state, dispatch] = useActionState(formAction, initialState); // Changed from useFormState
+  const [state, dispatch] = useActionState(formAction, initialState);
   const [preview, setPreview] = useState<string | null>(photoToEdit?.src || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -142,20 +142,7 @@ export function UploadPhotoForm({
         {state?.errors?.description && <p className="text-xs text-destructive">{state.errors.description.join(', ')}</p>}
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="display_order">Display Order</Label>
-        <Input
-          id="display_order"
-          name="display_order"
-          type="number"
-          min="0"
-          placeholder="e.g., 1 (leave empty for auto)"
-          // Not required, will auto-increment if empty
-          defaultValue={photoToEdit?.display_order?.toString() || ''} 
-          className={state?.errors?.display_order ? 'border-destructive' : ''}
-        />
-        {state?.errors?.display_order && <p className="text-xs text-destructive">{state.errors.display_order.join(', ')}</p>}
-      </div>
+      {/* Display Order field removed as per requirement */}
 
       {state?.message && !state.success && (
         <Alert variant="destructive" className="mt-4">
@@ -168,7 +155,6 @@ export function UploadPhotoForm({
         </Alert>
       )}
       
-      {/* Submit button is placed in DialogFooter if used in dialog, or directly if standalone */}
       {!isOpen && (
         <div className="flex justify-end">
           <SubmitButton isEditing={!!photoToEdit} />
@@ -181,10 +167,7 @@ export function UploadPhotoForm({
     return (
       <Dialog open={isOpen} onOpenChange={(open) => {
         if (!open) {
-          // Reset form state when dialog closes
-          // This is a bit of a hack, ideally useFormState reset would be clearer
-          // For now, we can reset the local component state for preview
-           if (!photoToEdit) { // Only clear if it was a new photo form
+           if (!photoToEdit) { 
             setPreview(null);
             if(fileInputRef.current) fileInputRef.current.value = '';
             formRef.current?.reset();
@@ -203,17 +186,8 @@ export function UploadPhotoForm({
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            {/* We need to attach the submit button to the form */}
-            {/*
-              The useFormStatus hook only works if the button is a descendant of the form.
-              To make this work with the dialog structure, we use a hidden submit button inside the form
-              and trigger it from the footer button. Or, we can directly call formRef.current?.requestSubmit()
-              on the footer button's onClick.
-            */}
              <Button 
               onClick={() => {
-                // This is a client-side way to trigger form submission.
-                // The actual submission is handled by the form's action.
                 formRef.current?.requestSubmit();
               }}
             >
@@ -229,6 +203,5 @@ export function UploadPhotoForm({
     );
   }
 
-  // Render as a standalone form
   return formContent;
 }
