@@ -1,8 +1,10 @@
+
 'use server';
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server';
+import { createSupabaseBrowserClient } from '@/lib/supabase/client'; // Added for getPublicPhotos
 import type { Photo } from '@/types';
 
 const PHOTO_BUCKET_NAME = 'photoflow_photos'; // Ensure this matches your Supabase bucket name
@@ -50,11 +52,17 @@ async function getMaxDisplayOrder(supabase: ReturnType<typeof createSupabaseServ
 export async function uploadPhoto(prevState: PhotoActionState | undefined, formData: FormData): Promise<PhotoActionState> {
   const supabase = createSupabaseServiceRoleClient();
   
+  // Convert display_order to number if it exists, otherwise it remains undefined for auto-increment logic
+  const displayOrderValue = formData.get('display_order');
+  const displayOrderNumber = displayOrderValue && displayOrderValue !== '' ? parseInt(displayOrderValue as string, 10) : undefined;
+
+
   const validatedFields = CreatePhotoSchema.safeParse({
     file: formData.get('file'),
     alt: formData.get('alt') || null,
     description: formData.get('description') || null,
-    display_order: formData.get('display_order') ? parseInt(formData.get('display_order') as string, 10) : undefined,
+    // Use the processed displayOrderNumber which can be undefined
+    display_order: displayOrderNumber === undefined ? 0 : displayOrderNumber, // Pass 0 if undefined, but it will be overridden if undefined
   });
 
   if (!validatedFields.success) {
@@ -64,9 +72,9 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
       success: false,
     };
   }
-
+  
   const { file, alt, description } = validatedFields.data;
-  let { display_order } = validatedFields.data;
+  let { display_order } = validatedFields.data; // This will be 0 if displayOrderNumber was undefined initially
 
   const filePath = `public/${Date.now()}-${file.name}`;
 
@@ -86,11 +94,15 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
     .getPublicUrl(filePath);
   
   if (!urlData?.publicUrl) {
+    // Attempt to delete the orphaned file from storage if URL retrieval fails
+    await supabase.storage.from(PHOTO_BUCKET_NAME).remove([filePath]);
     return { message: 'Could not get public URL for the uploaded file.', success: false };
   }
 
-  // If display_order is not provided, set it to max + 1
-  if (display_order === undefined) {
+  // If display_order was not provided by user (i.e., displayOrderNumber was undefined), set it to max + 1
+  // The schema gives it a default of 0 if undefined, so we can check against that or the original undefined state.
+  // A more robust check would be against the original `displayOrderNumber` variable.
+  if (displayOrderNumber === undefined) {
      display_order = (await getMaxDisplayOrder(supabase)) + 1;
   }
 
@@ -184,7 +196,7 @@ export async function deletePhoto(id: string, src: string): Promise<PhotoActionS
   }
 
   // Delete from database
-  const { error: dbError } } from supabase.from('photos').delete().eq('id', id);
+  const { error: dbError } = await supabase.from('photos').delete().eq('id', id);
 
   if (dbError) {
     console.error('Database Delete Error:', dbError);
@@ -213,7 +225,13 @@ export async function getPhotos(): Promise<Photo[]> {
 
 // For public gallery
 export async function getPublicPhotos(): Promise<Photo[]> {
-  const supabase = createSupabaseBrowserClient(); // Use browser client for public data
+  // This function should be called client-side or in a context where a browser client is appropriate.
+  // For server-side rendering of public data where RLS allows public read,
+  // createSupabaseServerClient() could be used.
+  // For client-side components, createSupabaseBrowserClient() is correct.
+  // Assuming this might be called from a server component for the public page:
+  const supabase = createSupabaseServiceRoleClient(); // Or createSupabaseServerClient() if RLS allows public access without service role
+  
   const { data, error } = await supabase
     .from('photos')
     .select('*')
