@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useRef, useState, useActionState } from 'react';
@@ -11,7 +12,7 @@ import { uploadPhoto, updatePhotoDetails, type PhotoActionState } from '@/action
 import type { Photo } from '@/types';
 import Image from 'next/image';
 import { useToast } from '@/hooks/use-toast';
-import { AlertCircle, UploadCloud, Save } from 'lucide-react';
+import { AlertCircle, UploadCloud, Save, Link as LinkIcon } from 'lucide-react'; // Added LinkIcon
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 function SubmitButton({ isEditing }: { isEditing: boolean }) {
@@ -21,7 +22,7 @@ function SubmitButton({ isEditing }: { isEditing: boolean }) {
       {isEditing ? (
         pending ? 'Saving...' : <><Save className="mr-2 h-4 w-4" /> Save Changes</>
       ) : (
-        pending ? 'Uploading...' : <><UploadCloud className="mr-2 h-4 w-4" /> Upload Photo</>
+        pending ? 'Adding...' : <><UploadCloud className="mr-2 h-4 w-4" /> Add Photo</>
       )}
     </Button>
   );
@@ -43,20 +44,23 @@ export function UploadPhotoForm({
   const initialState: PhotoActionState | undefined = undefined;
   const formAction = photoToEdit ? updatePhotoDetails : uploadPhoto;
   const [state, dispatch] = useActionState(formAction, initialState);
+  // Preview for existing photo to edit, or if user pastes a URL for a new photo
   const [preview, setPreview] = useState<string | null>(photoToEdit?.src || null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [currentSrcValue, setCurrentSrcValue] = useState<string>(photoToEdit?.src || '');
+
+
   const formRef = useRef<HTMLFormElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     if (state?.success) {
-      toast({ title: photoToEdit ? "Success" : "Upload Successful", description: state.message });
+      toast({ title: photoToEdit ? "Success" : "Photo Added", description: state.message });
       setPreview(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setCurrentSrcValue('');
       formRef.current?.reset();
       if (onOpenChange) onOpenChange(false); 
       if (onSuccess) onSuccess(); 
-    } else if (state?.message && (state.errors || !state.success)) { // Show toast if message and (errors exist OR not successful)
+    } else if (state?.message && (state.errors || !state.success)) { 
       toast({ variant: "destructive", title: "Error", description: state.message });
     }
   }, [state, toast, photoToEdit, onOpenChange, onSuccess]);
@@ -64,21 +68,21 @@ export function UploadPhotoForm({
   useEffect(() => {
     if (photoToEdit) {
       setPreview(photoToEdit.src);
+      setCurrentSrcValue(photoToEdit.src);
     } else {
       setPreview(null); 
+      setCurrentSrcValue('');
     }
   }, [photoToEdit, isOpen]); 
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+  const handleSrcChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const url = event.target.value;
+    setCurrentSrcValue(url);
+    // Basic validation for URL format to enable preview
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        setPreview(url);
     } else {
-      setPreview(null);
+        setPreview(null);
     }
   };
   
@@ -88,31 +92,36 @@ export function UploadPhotoForm({
       
       {!photoToEdit && (
         <div className="space-y-2">
-          <Label htmlFor="file">Photo File (Max 10MB)</Label>
-          <Input
-            id="file"
-            name="file"
-            type="file"
-            accept="image/*"
-            required={!photoToEdit}
-            onChange={handleFileChange}
-            ref={fileInputRef}
-            className={state?.errors?.file ? 'border-destructive' : ''}
-          />
-          {preview && (
-            <div className="mt-2 relative w-full h-48">
-              <Image src={preview} alt="Preview" fill style={{objectFit:"contain"}} className="rounded-md border" />
-            </div>
-          )}
-          {state?.errors?.file && <p className="text-xs text-destructive">{state.errors.file.join(', ')}</p>}
+          <Label htmlFor="src">Photo URL</Label>
+          <div className="flex items-center space-x-2">
+            <LinkIcon className="h-5 w-5 text-muted-foreground" />
+            <Input
+              id="src"
+              name="src"
+              type="url"
+              placeholder="https://example.com/image.jpg"
+              required
+              className={state?.errors?.src ? 'border-destructive' : ''}
+              value={currentSrcValue}
+              onChange={handleSrcChange}
+            />
+          </div>
+          {state?.errors?.src && <p className="text-xs text-destructive">{state.errors.src.join(', ')}</p>}
         </div>
       )}
 
-      {photoToEdit && preview && (
+      {(preview || (photoToEdit && photoToEdit.src)) && (
          <div className="mt-2 relative w-full h-48">
-            <Image src={preview} alt={photoToEdit.alt || "Photo preview"} fill style={{objectFit:"contain"}} className="rounded-md border" />
+            <Image 
+                src={preview || photoToEdit!.src} 
+                alt={photoToEdit?.alt || "Photo preview"} 
+                fill style={{objectFit:"contain"}} 
+                className="rounded-md border"
+                onError={() => setPreview('/placeholder-error.png')} // Fallback for broken image links
+            />
         </div>
       )}
+
 
       <div className="space-y-2">
         <Label htmlFor="alt">Alternative Text (for accessibility)</Label>
@@ -147,7 +156,6 @@ export function UploadPhotoForm({
             {state.message}
             {state.errors && Object.entries(state.errors).map(([field, fieldErrors]) => (
               <div key={field} className="mt-1">
-                {/* {field !== 'general' && <strong className="capitalize">{field}: </strong>} */}
                 {Array.isArray(fieldErrors) ? fieldErrors.join(', ') : String(fieldErrors)}
               </div>
             ))}
@@ -155,7 +163,7 @@ export function UploadPhotoForm({
         </Alert>
       )}
       
-      {!isOpen && ( // If not in a dialog, show submit button in the form
+      {!isOpen && ( 
         <div className="flex justify-end">
           <SubmitButton isEditing={!!photoToEdit} />
         </div>
@@ -169,7 +177,7 @@ export function UploadPhotoForm({
         if (!open) {
            if (!photoToEdit) { 
             setPreview(null);
-            if(fileInputRef.current) fileInputRef.current.value = '';
+            setCurrentSrcValue('');
             formRef.current?.reset();
           }
         }
@@ -177,7 +185,7 @@ export function UploadPhotoForm({
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{photoToEdit ? 'Edit Photo' : 'Upload New Photo'}</DialogTitle>
+            <DialogTitle>{photoToEdit ? 'Edit Photo Details' : 'Add New Photo by URL'}</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             {formContent}
@@ -186,22 +194,15 @@ export function UploadPhotoForm({
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-             {/* This SubmitButton is for the Dialog context */}
-             {/* We directly use the Button component and trigger form submission */}
              <Button 
               onClick={() => {
-                // Programmatically submit the form
-                // formRef.current is connected to the form inside formContent
                 formRef.current?.requestSubmit(); 
               }}
-              // The status (pending) is handled by useFormStatus inside SubmitButton if we were to use it,
-              // but for simplicity, we'll just have a button that triggers submit.
-              // For pending state in dialog footer, you'd need to lift useFormStatus or pass pending state down.
             >
               {photoToEdit ? (
                 <><Save className="mr-2 h-4 w-4" /> Save Changes</>
               ) : (
-                <><UploadCloud className="mr-2 h-4 w-4" /> Upload Photo</>
+                <><UploadCloud className="mr-2 h-4 w-4" /> Add Photo</>
               )}
             </Button>
           </DialogFooter>
@@ -210,5 +211,6 @@ export function UploadPhotoForm({
     );
   }
 
-  return formContent; // Standalone form (not in a dialog)
+  return formContent;
 }
+

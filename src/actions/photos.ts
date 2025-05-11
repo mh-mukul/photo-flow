@@ -1,3 +1,4 @@
+
 'use server';
 
 import { revalidatePath } from 'next/cache';
@@ -6,8 +7,6 @@ import { createSupabaseServiceRoleClient } from '@/lib/supabase/server';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'; // Added for getPublicPhotos
 import type { Photo } from '@/types';
 
-const PHOTO_BUCKET_NAME = 'photoflow_photos'; // Ensure this matches your Supabase bucket name
-
 // Schemas for validation
 const PhotoBaseSchema = z.object({
   alt: z.string().optional().nullable(),
@@ -15,8 +14,7 @@ const PhotoBaseSchema = z.object({
 });
 
 const CreatePhotoSchema = PhotoBaseSchema.extend({
-  file: z.instanceof(File).refine(file => file.size > 0, 'File is required.')
-                         .refine(file => file.size <= 10 * 1024 * 1024, 'File size should be less than 10MB.'), // Example: 10MB limit
+  src: z.string().url({ message: 'Please enter a valid URL.' }).min(1, 'Image URL is required.'),
 });
 
 const UpdatePhotoSchema = PhotoBaseSchema.extend({
@@ -53,7 +51,7 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
     const supabase = createSupabaseServiceRoleClient();
     
     const validatedFields = CreatePhotoSchema.safeParse({
-      file: formData.get('file'),
+      src: formData.get('src'),
       alt: formData.get('alt') || null,
       description: formData.get('description') || null,
     });
@@ -67,39 +65,14 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
       };
     }
     
-    const { file, alt, description } = validatedFields.data;
+    const { src, alt, description } = validatedFields.data;
     
-    // Sanitize filename (basic example, consider more robust library if needed)
-    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = `public/${Date.now()}-${safeFileName}`;
-
-    // Upload file to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from(PHOTO_BUCKET_NAME)
-      .upload(filePath, file);
-
-    if (uploadError) {
-      console.error('Storage Upload Error:', uploadError);
-      return { message: `Storage Error: ${uploadError.message}`, success: false, errors: { file: ["Failed to upload to storage. Check file type/size or bucket permissions."] } };
-    }
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from(PHOTO_BUCKET_NAME)
-      .getPublicUrl(filePath);
-    
-    if (!urlData?.publicUrl) {
-      console.error('Failed to get public URL for:', filePath);
-      await supabase.storage.from(PHOTO_BUCKET_NAME).remove([filePath]).catch(err => console.error("Failed to remove orphaned file after URL failure:", err));
-      return { message: 'Could not get public URL for the uploaded file.', success: false, errors: { general: ["Failed to process file after upload."] } };
-    }
-
     const display_order = (await getMaxDisplayOrder(supabase)) + 1;
 
     const { data: photo, error: dbError } = await supabase
       .from('photos')
       .insert({
-        src: urlData.publicUrl,
+        src: src,
         alt: alt,
         description: description,
         display_order: display_order,
@@ -109,19 +82,18 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
 
     if (dbError) {
       console.error('Database Insert Error:', dbError);
-      await supabase.storage.from(PHOTO_BUCKET_NAME).remove([filePath]).catch(err => console.error("Failed to remove orphaned file after DB failure:", err));
       return { message: `Database Error: ${dbError.message}`, success: false, errors: { general: ["Failed to save photo details to database."] } };
     }
 
     revalidatePath('/admin/photos');
     revalidatePath('/');
-    return { message: 'Photo uploaded successfully!', success: true, photo };
+    return { message: 'Photo added successfully!', success: true, photo };
 
   } catch (error: unknown) {
     console.error("Unhandled error in uploadPhoto action:", error);
     let errorMessage = "An unexpected server error occurred. Please check server logs.";
     
-    if (error instanceof ZodError) { // Should be caught by validatedFields.success check, but as a safeguard
+    if (error instanceof ZodError) { 
         return {
             errors: error.flatten().fieldErrors,
             message: "A validation error occurred during processing.",
@@ -129,8 +101,6 @@ export async function uploadPhoto(prevState: PhotoActionState | undefined, formD
         };
     } else if (error instanceof Error) {
         // Avoid exposing too much detail from generic Error objects if not desired
-        // errorMessage = error.message; // Potentially too detailed for client
-        // Keep the generic message or a sanitized one
     }
     
     return {
@@ -199,20 +169,20 @@ export async function deletePhoto(id: string, src: string): Promise<PhotoActionS
   try {
     const supabase = createSupabaseServiceRoleClient();
 
-    const urlParts = src.split(`/storage/v1/object/public/${PHOTO_BUCKET_NAME}/`);
-    if (urlParts.length < 2) {
-        return { message: 'Invalid photo source URL format.', success: false, errors: { general: ["Cannot determine file path from URL."] } };
-    }
-    const filePath = urlParts[1];
+    // No longer deleting from Supabase Storage as per new requirement (URL based)
+    // const urlParts = src.split(`/storage/v1/object/public/${PHOTO_BUCKET_NAME}/`);
+    // if (urlParts.length < 2) {
+    //     return { message: 'Invalid photo source URL format.', success: false, errors: { general: ["Cannot determine file path from URL."] } };
+    // }
+    // const filePath = urlParts[1];
 
-    const { error: storageError } = await supabase.storage
-      .from(PHOTO_BUCKET_NAME)
-      .remove([filePath]);
+    // const { error: storageError } = await supabase.storage
+    //   .from(PHOTO_BUCKET_NAME)
+    //   .remove([filePath]);
 
-    if (storageError) {
-      console.error('Storage Delete Error (proceeding with DB deletion):', storageError);
-      // Optionally, return an error here if critical, or just log and continue
-    }
+    // if (storageError) {
+    //   console.error('Storage Delete Error (proceeding with DB deletion):', storageError);
+    // }
 
     const { error: dbError } = await supabase.from('photos').delete().eq('id', id);
 

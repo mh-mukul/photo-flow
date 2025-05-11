@@ -1,3 +1,4 @@
+
 import { getPhotos } from '@/actions/photos';
 import { PhotoList } from './components/photo-list';
 import { UploadPhotoForm } from './components/photo-form';
@@ -13,8 +14,8 @@ export default async function AdminPhotosPage() {
       
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>Upload New Photo</CardTitle>
-          <CardDescription>Add a new image to your portfolio.</CardDescription>
+          <CardTitle>Add New Photo by URL</CardTitle>
+          <CardDescription>Add a new image to your portfolio by providing its URL.</CardDescription>
         </CardHeader>
         <CardContent>
           <UploadPhotoForm />
@@ -26,16 +27,17 @@ export default async function AdminPhotosPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Existing Photos</CardTitle>
-          <CardDescription>Edit, reorder, or delete your current photos.</CardDescription>
+          <CardDescription>Edit details or delete your current photos. Reordering can be managed if display_order is updated.</CardDescription>
         </CardHeader>
         <CardContent>
           {photos.length > 0 ? (
             <PhotoList initialPhotos={photos} />
           ) : (
-            <p className="text-muted-foreground">No photos found. Upload your first photo!</p>
+            <p className="text-muted-foreground">No photos found. Add your first photo by URL!</p>
           )}
         </CardContent>
       </Card>
     </div>
   );
 }
+
