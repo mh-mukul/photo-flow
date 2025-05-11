@@ -2,12 +2,13 @@
 "use client";
 
 import Link from 'next/link';
-import { Camera, Menu } from 'lucide-react';
+import { Camera, Menu, LogOut } from 'lucide-react'; // Import LogOut icon
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useEffect, useState, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import { logout } from '@/actions/auth'; // Import logout action
 
 const navLinks = [
   { href: '#gallery', label: 'Gallery' },
@@ -16,9 +17,10 @@ const navLinks = [
 
 interface HeaderProps {
   isAdminLogin?: boolean;
+  isLoggedIn?: boolean; // Add isLoggedIn prop
 }
 
-export function Header({ isAdminLogin = false }: HeaderProps) {
+export function Header({ isAdminLogin = false, isLoggedIn = false }: HeaderProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [activeLink, setActiveLink] = useState('');
   const isMobile = useIsMobile();
@@ -36,14 +38,21 @@ export function Header({ isAdminLogin = false }: HeaderProps) {
   }, [isAdminLogin]);
 
   const handleScroll = (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>, href: string) => {
-    if (isAdminLogin) {
-      // For admin login, just navigate if it's a full path
-      if (!href.startsWith('#')) {
-        // Standard link behavior will apply if not a hash link
-        return;
-      }
+    if (isAdminLogin || href.startsWith('mailto:')) { // Allow default for mailto links
+      return;
     }
     e.preventDefault();
+    
+    // If it's a full path (like /admin/login), let Link handle it
+    if (!href.startsWith('#')) {
+        if (isMobile && sheetCloseRef.current) {
+            sheetCloseRef.current.click();
+        }
+        // For non-hash links, we let the Link component do its job, no special scroll handling.
+        // This part is mainly for hash links for scrolling.
+        return; 
+    }
+
     setActiveLink(href);
     const targetId = href.replace(/.*#/, "");
     const elem = document.getElementById(targetId);
@@ -53,6 +62,9 @@ export function Header({ isAdminLogin = false }: HeaderProps) {
       history.pushState(null, "", href);
     } else {
       window.location.hash = href;
+    }
+    if (isMobile && sheetCloseRef.current) {
+      sheetCloseRef.current.click();
     }
   };
   
@@ -80,16 +92,34 @@ export function Header({ isAdminLogin = false }: HeaderProps) {
   }, [isAdminLogin]);
 
   const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
-    if (!isAdminLogin) {
-      e.preventDefault(); 
-      window.scrollTo({top: 0, behavior: 'smooth'}); 
-      setActiveLink('');
+    if (pathname === '/admin/login' || pathname.startsWith('/admin/')) {
+      // Allow default Link behavior to navigate to "/"
       if (isMobile && sheetCloseRef.current) {
         sheetCloseRef.current.click();
       }
+      return;
     }
-    // For admin login or if it's a full path, allow default Link behavior
+    // For public pages
+    e.preventDefault(); 
+    window.scrollTo({top: 0, behavior: 'smooth'}); 
+    setActiveLink('');
+    if (history.pushState) {
+      history.pushState(null, "", "/");
+    } else {
+      window.location.pathname = "/";
+    }
+    if (isMobile && sheetCloseRef.current) {
+      sheetCloseRef.current.click();
+    }
   };
+
+  // Get current pathname for conditional rendering
+  const [pathname, setPathname] = useState('');
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setPathname(window.location.pathname);
+    }
+  }, []);
 
 
   if (!isMounted) {
@@ -110,12 +140,7 @@ export function Header({ isAdminLogin = false }: HeaderProps) {
     <Link
       key={link.href}
       href={link.href}
-      onClick={(e) => {
-        handleScroll(e, link.href);
-        if (isMobile && sheetCloseRef.current) {
-          sheetCloseRef.current.click();
-        }
-      }}
+      onClick={(e) => handleScroll(e, link.href)}
       className={cn(
         "font-medium transition-colors hover:text-accent",
         activeLink === link.href ? "text-accent" : "text-foreground/80",
@@ -125,6 +150,15 @@ export function Header({ isAdminLogin = false }: HeaderProps) {
       {link.label}
     </Link>
   ));
+
+  const LogoutButton = () => (
+    <form action={logout}>
+      <Button type="submit" variant="ghost" size={isMobile ? "lg" : "sm"} className={isMobile ? "w-full justify-start text-left px-3 py-3 text-lg" : "text-sm"}>
+        <LogOut className={cn("h-4 w-4", isMobile && "mr-3 h-5 w-5")} />
+        Logout
+      </Button>
+    </form>
+  );
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -150,7 +184,8 @@ export function Header({ isAdminLogin = false }: HeaderProps) {
                <Link 
                   href="/" 
                   onClick={(e) => { 
-                    handleLogoClick(e); // Use existing logic
+                    handleLogoClick(e); 
+                     if (sheetCloseRef.current) sheetCloseRef.current.click();
                   }} 
                   className="flex items-center gap-2 text-primary hover:text-accent transition-colors mb-6"
                   aria-label="PhotoFlow Home"
@@ -158,17 +193,39 @@ export function Header({ isAdminLogin = false }: HeaderProps) {
                 <Camera className="h-6 w-6 text-accent" />
                 <span className="font-bold text-xl">PhotoFlow</span>
               </Link>
-              <nav className="flex flex-col space-y-2 mt-4">
-                {navItems}
-              </nav>
+              {!isLoggedIn && (
+                <nav className="flex flex-col space-y-1">
+                  {navItems}
+                </nav>
+              )}
+              {isLoggedIn && (
+                <div className="mt-auto flex flex-col space-y-1">
+                  <LogoutButton />
+                </div>
+              )}
               <SheetClose ref={sheetCloseRef} className="hidden" />
             </SheetContent>
           </Sheet>
         ) : !isAdminLogin ? (
-          <nav className="flex items-center gap-2 md:gap-4">
-            {navItems}
+          <nav className="flex items-center gap-1 md:gap-2">
+            {!isLoggedIn && navItems}
+            {isLoggedIn && <LogoutButton />}
           </nav>
         ) : null}
+
+        {/* Admin Login Page specific: No nav items, no logout button if not logged in */}
+        {isAdminLogin && !isLoggedIn && (
+            <div className="flex items-center">
+                {/* Placeholder or specific content for login page header if needed */}
+            </div>
+        )}
+         {/* Admin Login Page specific: show logout if somehow logged in (middleware should prevent this) */}
+        {isAdminLogin && isLoggedIn && (
+             <nav className="flex items-center gap-1 md:gap-2">
+                <LogoutButton />
+            </nav>
+        )}
+
       </div>
     </header>
   );
