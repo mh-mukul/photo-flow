@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { LogOut, Image as ImageIcon, Settings } from 'lucide-react';
+import { LogOut, Image as ImageIcon, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { logout } from '@/actions/auth';
@@ -16,19 +16,43 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const pathname = headers().get('next-url');
+  const pathname = headers().get('next-url') || '';
 
   if (pathname === '/admin/login') {
-    return <>{children}</>; // Render children directly without sidebar for login page
+    return (
+      <div className="flex flex-col min-h-screen bg-background">
+        <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="container flex h-16 max-w-screen-2xl items-center justify-between px-4 md:px-6">
+            <Link 
+              href="/" 
+              className="flex items-center gap-2 text-primary hover:text-accent transition-colors"
+              aria-label="PhotoFlow Home"
+            >
+              <Camera className="h-6 w-6 text-accent" />
+              <span className="font-bold text-xl">PhotoFlow</span>
+            </Link>
+          </div>
+        </header>
+        <main className="flex-grow flex items-center justify-center">
+          {children}
+        </main>
+      </div>
+    );
   }
 
   return (
     <div className="flex min-h-screen bg-muted/40">
       <aside className="sticky top-0 h-screen w-64 bg-background border-r border-border flex flex-col">
         <div className="p-4 border-b border-border">
-          <Link href="/admin/photos" className="text-2xl font-bold text-primary hover:text-accent transition-colors">
-            PhotoFlow Admin
+          <Link 
+            href="/" 
+            className="flex items-center gap-2 text-primary hover:text-accent transition-colors"
+            aria-label="PhotoFlow Home"
+          >
+            <Camera className="h-6 w-6 text-accent" />
+            <span className="font-bold text-xl">PhotoFlow</span>
           </Link>
+           <p className="text-sm text-muted-foreground mt-1">Admin Panel</p>
         </div>
         <nav className="flex-grow p-4 space-y-2">
           <Button variant="ghost" className="w-full justify-start" asChild>
@@ -37,13 +61,6 @@ export default function AdminLayout({
               Photos
             </Link>
           </Button>
-          {/* Add more admin navigation links here if needed */}
-          {/* <Button variant="ghost" className="w-full justify-start" asChild>
-            <Link href="/admin/settings">
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </Link>
-          </Button> */}
         </nav>
         <Separator />
         <div className="p-4">

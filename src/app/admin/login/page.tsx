@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useActionState, useEffect } from 'react'; // Changed from useFormState
+import { useActionState, useEffect } from 'react';
 import { useFormStatus } from 'react-dom';
 import { login, type LoginState } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
@@ -23,11 +23,11 @@ function LoginButton() {
 
 export default function LoginPage() {
   const initialState: LoginState | undefined = undefined;
-  const [state, dispatch] = useActionState(login, initialState); // Changed from useFormState
+  const [state, dispatch] = useActionState(login, initialState);
   const { toast } = useToast();
 
   useEffect(() => {
-    if (state?.message && state.errors) { // Only show toast if there are errors with a message
+    if (state?.message && state.errors) { 
       toast({
         variant: "destructive",
         title: "Login Failed",
@@ -37,65 +37,64 @@ export default function LoginPage() {
   }, [state, toast]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-sm shadow-2xl">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold text-primary">Admin Login</CardTitle>
-          <CardDescription>Enter your credentials to access the admin panel.</CardDescription>
-        </CardHeader>
-        <form action={dispatch}>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                name="username"
-                type="text"
-                placeholder="admin"
-                required
-                className={state?.errors?.username ? 'border-destructive' : ''}
-              />
-              {state?.errors?.username && (
-                <p className="text-xs text-destructive">{state.errors.username.join(', ')}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                required
-                className={state?.errors?.password ? 'border-destructive' : ''}
-              />
-              {state?.errors?.password && (
-                <p className="text-xs text-destructive">{state.errors.password.join(', ')}</p>
-              )}
-            </div>
-            {state?.errors?.credentials && (
+    // Removed centering classes as layout now handles it
+    <Card className="w-full max-w-sm shadow-2xl">
+      <CardHeader className="space-y-1 text-center">
+        <CardTitle className="text-2xl font-bold text-primary">Admin Login</CardTitle>
+        <CardDescription>Enter your credentials to access the admin panel.</CardDescription>
+      </CardHeader>
+      <form action={dispatch}>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="username">Username</Label>
+            <Input
+              id="username"
+              name="username"
+              type="text"
+              placeholder="admin"
+              required
+              className={state?.errors?.username ? 'border-destructive' : ''}
+            />
+            {state?.errors?.username && (
+              <p className="text-xs text-destructive">{state.errors.username.join(', ')}</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              required
+              className={state?.errors?.password ? 'border-destructive' : ''}
+            />
+            {state?.errors?.password && (
+              <p className="text-xs text-destructive">{state.errors.password.join(', ')}</p>
+            )}
+          </div>
+          {state?.errors?.credentials && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>
+                {state.errors.credentials.join(', ')}
+              </AlertDescription>
+            </Alert>
+          )}
+           {state?.message && !state.errors?.credentials && state.errors && ( 
               <Alert variant="destructive" className="mt-4">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
-                <AlertDescription>
-                  {state.errors.credentials.join(', ')}
-                </AlertDescription>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>
+                      {state.message}
+                  </AlertDescription>
               </Alert>
-            )}
-             {state?.message && !state.errors?.credentials && state.errors && ( // Generic message not tied to specific fields
-                <Alert variant="destructive" className="mt-4">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Error</AlertTitle>
-                    <AlertDescription>
-                        {state.message}
-                    </AlertDescription>
-                </Alert>
-            )}
-          </CardContent>
-          <CardFooter>
-            <LoginButton />
-          </CardFooter>
-        </form>
-      </Card>
-    </div>
+          )}
+        </CardContent>
+        <CardFooter>
+          <LoginButton />
+        </CardFooter>
+      </form>
+    </Card>
   );
 }
