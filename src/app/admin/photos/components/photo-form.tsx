@@ -1,7 +1,8 @@
+
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useEffect, useRef, useState, useActionState } from 'react'; // Changed from useFormState
+import { useFormStatus } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,7 +43,7 @@ export function UploadPhotoForm({
 }: UploadPhotoFormProps) {
   const initialState: PhotoActionState | undefined = undefined;
   const formAction = photoToEdit ? updatePhotoDetails : uploadPhoto;
-  const [state, dispatch] = useFormState(formAction, initialState);
+  const [state, dispatch] = useActionState(formAction, initialState); // Changed from useFormState
   const [preview, setPreview] = useState<string | null>(photoToEdit?.src || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -103,7 +104,7 @@ export function UploadPhotoForm({
           />
           {preview && (
             <div className="mt-2 relative w-full h-48">
-              <Image src={preview} alt="Preview" layout="fill" objectFit="contain" className="rounded-md border" />
+              <Image src={preview} alt="Preview" fill objectFit="contain" className="rounded-md border" />
             </div>
           )}
           {state?.errors?.file && <p className="text-xs text-destructive">{state.errors.file.join(', ')}</p>}
@@ -112,7 +113,7 @@ export function UploadPhotoForm({
 
       {photoToEdit && preview && (
          <div className="mt-2 relative w-full h-48">
-            <Image src={preview} alt={photoToEdit.alt || "Photo preview"} layout="fill" objectFit="contain" className="rounded-md border" />
+            <Image src={preview} alt={photoToEdit.alt || "Photo preview"} fill objectFit="contain" className="rounded-md border" />
         </div>
       )}
 
@@ -148,9 +149,9 @@ export function UploadPhotoForm({
           name="display_order"
           type="number"
           min="0"
-          placeholder="e.g., 1"
-          required
-          defaultValue={photoToEdit?.display_order?.toString() || '0'}
+          placeholder="e.g., 1 (leave empty for auto)"
+          // Not required, will auto-increment if empty
+          defaultValue={photoToEdit?.display_order?.toString() || ''} 
           className={state?.errors?.display_order ? 'border-destructive' : ''}
         />
         {state?.errors?.display_order && <p className="text-xs text-destructive">{state.errors.display_order.join(', ')}</p>}
@@ -178,7 +179,19 @@ export function UploadPhotoForm({
 
   if (isOpen && onOpenChange) { // Render as a Dialog
     return (
-      <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <Dialog open={isOpen} onOpenChange={(open) => {
+        if (!open) {
+          // Reset form state when dialog closes
+          // This is a bit of a hack, ideally useFormState reset would be clearer
+          // For now, we can reset the local component state for preview
+           if (!photoToEdit) { // Only clear if it was a new photo form
+            setPreview(null);
+            if(fileInputRef.current) fileInputRef.current.value = '';
+            formRef.current?.reset();
+          }
+        }
+        onOpenChange(open);
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{photoToEdit ? 'Edit Photo' : 'Upload New Photo'}</DialogTitle>
@@ -191,7 +204,19 @@ export function UploadPhotoForm({
               <Button variant="outline">Cancel</Button>
             </DialogClose>
             {/* We need to attach the submit button to the form */}
-            <Button onClick={() => formRef.current?.requestSubmit()}> 
+            {/*
+              The useFormStatus hook only works if the button is a descendant of the form.
+              To make this work with the dialog structure, we use a hidden submit button inside the form
+              and trigger it from the footer button. Or, we can directly call formRef.current?.requestSubmit()
+              on the footer button's onClick.
+            */}
+             <Button 
+              onClick={() => {
+                // This is a client-side way to trigger form submission.
+                // The actual submission is handled by the form's action.
+                formRef.current?.requestSubmit();
+              }}
+            >
               {photoToEdit ? (
                 <><Save className="mr-2 h-4 w-4" /> Save Changes</>
               ) : (

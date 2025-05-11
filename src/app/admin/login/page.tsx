@@ -1,6 +1,8 @@
+
 'use client';
 
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState, useEffect } from 'react'; // Changed from useFormState
+import { useFormStatus } from 'react-dom';
 import { login, type LoginState } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +10,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AlertCircle, LogIn } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
 function LoginButton() {
@@ -22,7 +23,7 @@ function LoginButton() {
 
 export default function LoginPage() {
   const initialState: LoginState | undefined = undefined;
-  const [state, dispatch] = useFormState(login, initialState);
+  const [state, dispatch] = useActionState(login, initialState); // Changed from useFormState
   const { toast } = useToast();
 
   useEffect(() => {
