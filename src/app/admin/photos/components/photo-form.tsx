@@ -12,7 +12,7 @@ import { uploadPhoto, updatePhotoDetails, type PhotoActionState } from '@/action
 import type { Photo } from '@/types';
 import Image from 'next/image';
 import { useToast } from '@/hooks/use-toast';
-import { AlertCircle, UploadCloud, Save, Link as LinkIcon } from 'lucide-react'; // Added LinkIcon
+import { AlertCircle, UploadCloud, Save, Link as LinkIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 function SubmitButton({ isEditing }: { isEditing: boolean }) {
@@ -41,10 +41,12 @@ export function UploadPhotoForm({
   onOpenChange,
   onSuccess,
 }: UploadPhotoFormProps) {
-  const initialState: PhotoActionState | undefined = undefined;
+  const initialState: PhotoActionState | undefined = photoToEdit 
+    ? { photo: photoToEdit, success: undefined, message: undefined, errors: undefined } 
+    : undefined;
   const formAction = photoToEdit ? updatePhotoDetails : uploadPhoto;
   const [state, dispatch] = useActionState(formAction, initialState);
-  // Preview for existing photo to edit, or if user pastes a URL for a new photo
+  
   const [preview, setPreview] = useState<string | null>(photoToEdit?.src || null);
   const [currentSrcValue, setCurrentSrcValue] = useState<string>(photoToEdit?.src || '');
 
@@ -60,25 +62,30 @@ export function UploadPhotoForm({
       formRef.current?.reset();
       if (onOpenChange) onOpenChange(false); 
       if (onSuccess) onSuccess(); 
-    } else if (state?.message && (state.errors || !state.success)) { 
+    } else if (state?.message && (state.errors || state.success === false)) { // Check state.success === false explicitly
       toast({ variant: "destructive", title: "Error", description: state.message });
     }
   }, [state, toast, photoToEdit, onOpenChange, onSuccess]);
 
   useEffect(() => {
-    if (photoToEdit) {
+    if (photoToEdit && isOpen) { // Ensure photoToEdit details are populated when dialog opens for editing
       setPreview(photoToEdit.src);
       setCurrentSrcValue(photoToEdit.src);
-    } else {
+      // Manually set form field values if defaultValue isn't enough due to state nuances
+      if (formRef.current) {
+        (formRef.current.elements.namedItem('alt') as HTMLInputElement).value = photoToEdit.alt || '';
+        (formRef.current.elements.namedItem('description') as HTMLTextAreaElement).value = photoToEdit.description || '';
+      }
+    } else if (!photoToEdit && isOpen) { // Reset form for adding new photo when dialog opens
       setPreview(null); 
       setCurrentSrcValue('');
+      formRef.current?.reset();
     }
   }, [photoToEdit, isOpen]); 
 
   const handleSrcChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const url = event.target.value;
     setCurrentSrcValue(url);
-    // Basic validation for URL format to enable preview
     if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
         setPreview(url);
     } else {
@@ -117,7 +124,11 @@ export function UploadPhotoForm({
                 alt={photoToEdit?.alt || "Photo preview"} 
                 fill style={{objectFit:"contain"}} 
                 className="rounded-md border"
-                onError={() => setPreview('/placeholder-error.png')} // Fallback for broken image links
+                onError={() => {
+                    toast({variant: "destructive", title:"Image Error", description: "Could not load image preview."});
+                    setPreview('/placeholder-error.png'); // A generic placeholder
+                }}
+                data-ai-hint="image preview"
             />
         </div>
       )}
@@ -148,15 +159,15 @@ export function UploadPhotoForm({
         {state?.errors?.description && <p className="text-xs text-destructive">{state.errors.description.join(', ')}</p>}
       </div>
 
-      {state?.message && !state.success && (
+      {state?.message && state.success === false && ( // Check state.success === false explicitly
         <Alert variant="destructive" className="mt-4">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Operation Failed</AlertTitle>
           <AlertDescription>
             {state.message}
             {state.errors && Object.entries(state.errors).map(([field, fieldErrors]) => (
-              <div key={field} className="mt-1">
-                {Array.isArray(fieldErrors) ? fieldErrors.join(', ') : String(fieldErrors)}
+              <div key={field} className="mt-1 text-xs">
+                <strong>{field}:</strong> {Array.isArray(fieldErrors) ? fieldErrors.join(', ') : String(fieldErrors)}
               </div>
             ))}
           </AlertDescription>
@@ -164,7 +175,7 @@ export function UploadPhotoForm({
       )}
       
       {!isOpen && ( 
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-4">
           <SubmitButton isEditing={!!photoToEdit} />
         </div>
       )}
@@ -174,23 +185,24 @@ export function UploadPhotoForm({
   if (isOpen && onOpenChange) { 
     return (
       <Dialog open={isOpen} onOpenChange={(open) => {
-        if (!open) {
-           if (!photoToEdit) { 
+        if (!open) { // When dialog is closing
+          if (!photoToEdit) { // If it was an "add photo" form
             setPreview(null);
             setCurrentSrcValue('');
-            formRef.current?.reset();
+            formRef.current?.reset(); // Reset form fields
           }
+          // For edit, no explicit reset needed here, useEffect handles re-population if re-opened
         }
         onOpenChange(open);
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md flex flex-col max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>{photoToEdit ? 'Edit Photo Details' : 'Add New Photo by URL'}</DialogTitle>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-4 flex-1 overflow-y-auto min-h-0 pr-2"> {/* Added pr-2 for scrollbar spacing */}
             {formContent}
           </div>
-          <DialogFooter>
+          <DialogFooter className="pt-4 border-t">
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
@@ -198,6 +210,7 @@ export function UploadPhotoForm({
               onClick={() => {
                 formRef.current?.requestSubmit(); 
               }}
+              disabled={useFormStatus().pending} // Disable button while form is submitting
             >
               {photoToEdit ? (
                 <><Save className="mr-2 h-4 w-4" /> Save Changes</>
@@ -211,6 +224,16 @@ export function UploadPhotoForm({
     );
   }
 
-  return formContent;
+  // Standalone form (not in dialog)
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{photoToEdit ? 'Edit Photo Details' : 'Add New Photo by URL'}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {formContent}
+      </CardContent>
+    </Card>
+  );
 }
 
